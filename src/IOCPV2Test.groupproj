@@ -1,0 +1,48 @@
+﻿<Project xmlns="http://schemas.microsoft.com/developer/msbuild/2003">
+    <PropertyGroup>
+        <ProjectGuid>{E8CE3BAD-C21A-475D-9D92-8F7598F54DF1}</ProjectGuid>
+    </PropertyGroup>
+    <ItemGroup>
+        <Projects Include="LCXLComp.dproj">
+            <Dependencies/>
+        </Projects>
+        <Projects Include="..\test\IOCPTest.dproj">
+            <Dependencies>LCXLComp.dproj</Dependencies>
+        </Projects>
+    </ItemGroup>
+    <ProjectExtensions>
+        <Borland.Personality>Default.Personality.12</Borland.Personality>
+        <Borland.ProjectType/>
+        <BorlandProject>
+            <Default.Personality/>
+        </BorlandProject>
+    </ProjectExtensions>
+    <Target Name="LCXLComp">
+        <MSBuild Projects="LCXLComp.dproj"/>
+    </Target>
+    <Target Name="LCXLComp:Clean">
+        <MSBuild Projects="LCXLComp.dproj" Targets="Clean"/>
+    </Target>
+    <Target Name="LCXLComp:Make">
+        <MSBuild Projects="LCXLComp.dproj" Targets="Make"/>
+    </Target>
+    <Target Name="IOCPTest" DependsOnTargets="LCXLComp">
+        <MSBuild Projects="..\test\IOCPTest.dproj"/>
+    </Target>
+    <Target Name="IOCPTest:Clean" DependsOnTargets="LCXLComp:Clean">
+        <MSBuild Projects="..\test\IOCPTest.dproj" Targets="Clean"/>
+    </Target>
+    <Target Name="IOCPTest:Make" DependsOnTargets="LCXLComp:Make">
+        <MSBuild Projects="..\test\IOCPTest.dproj" Targets="Make"/>
+    </Target>
+    <Target Name="Build">
+        <CallTarget Targets="LCXLComp;IOCPTest"/>
+    </Target>
+    <Target Name="Clean">
+        <CallTarget Targets="LCXLComp:Clean;IOCPTest:Clean"/>
+    </Target>
+    <Target Name="Make">
+        <CallTarget Targets="LCXLComp:Make;IOCPTest:Make"/>
+    </Target>
+    <Import Project="$(BDS)\Bin\CodeGear.Group.Targets" Condition="Exists('$(BDS)\Bin\CodeGear.Group.Targets')"/>
+</Project>

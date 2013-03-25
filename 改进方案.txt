@@ -1,0 +1,18 @@
+控件改进方案 by LCXL
+1.将SockRec结构体改为类形式SockObj，以支持继承特性
+2.为保证控件的高效性，SockObj采用对象池，当socket关闭时SockObj不立即释放，在特定情况下才将SockObj释放掉
+3.为保证控件的高效性，控件将不提供线程同步方法，线程数据处理方案由应用程序自信处理
+4.尽量不使用Delphi特有语法，保证以后能顺利迁移到其他语言平台中
+5.控件继续保持自己管理Socket数量的功能，简化应用程序的负担
+6.一切通讯协议扩展类以IOCPBase为基类
+7.覆盖通信协议用override功能覆盖父类保护域中的SockEvent函数
+8.给通讯协议增加功能使用私有函数对接父类接口，然后再将新的接口接口暴露出来
+9.TIOCPOBJBase类采用应用方法来释放，Free并不是真正的释放函数。。。
+
+约束和联系
+untIOCPBase.pas
+1.TIOCPManager类有且只能有一个对象，它必须在所有对象之前生成，在所有对象之后销毁；
+2.TSocketMgr对象的内存只有在它所管辖的TIOCPOBJBase对象和所管辖的TSocketObj对象列表全部释放时才会最终释放。
+  因此，TIOCPOBJBase对象和TSocketObj对象访问 TIOCPObjRec对象不需要判断TIOCPObjRec对象的有效性。
+  TIOCPOBJBase对象和TSocketObj对象不能访问其他 TIOCPObjRec对象中的内容，只能访问所属的TIOCPObjRec对象中的内容
+3.在Free TIOCPManager时，请确保所属的TIOCPOBJBase对象全部已经free掉了

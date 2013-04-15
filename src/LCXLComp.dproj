@@ -107,7 +107,6 @@
             <MainSource>MainSource</MainSource>
         </DelphiCompile>
         <DCCReference Include="rtl.dcp"/>
-        <DCCReference Include="LCXLIOCPBase.pas"/>
         <DCCReference Include="LCXLWinSock2.pas"/>
         <DCCReference Include="LCXLIOCPLcxl.pas"/>
         <DCCReference Include="LCXLMSWSock.pas"/>
@@ -116,6 +115,7 @@
         <DCCReference Include="LCXLMSTcpIP.pas"/>
         <DCCReference Include="LCXLWs2tcpip.pas"/>
         <DCCReference Include="LCXLWS2Def.pas"/>
+        <DCCReference Include="LCXLIOCPBase.pas"/>
         <BuildConfiguration Include="Release">
             <Key>Cfg_2</Key>
             <CfgParent>Base</CfgParent>

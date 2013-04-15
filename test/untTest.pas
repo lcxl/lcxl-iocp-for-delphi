@@ -6,7 +6,7 @@ uses
   Windows, Messages, SysUtils, Variants, Classes, Graphics, Controls, Forms,
   Dialogs, ComCtrls, StdCtrls, ExtCtrls, DateUtils,
 
-  LCXLWinSock2, LCXLIOCPBase(*, LCXLIOCPLcxl, LCXLIOCPCmd*), LCXLIOCPHttp, Vcl.Menus;
+  LCXLWinSock2, LCXLIOCPBase(*, LCXLIOCPLcxl, LCXLIOCPCmd*), LCXLIOCPHttp, Menus;
 
 const
   WM_SOCK_EVENT = WM_USER + 200;
@@ -145,7 +145,15 @@ begin
   for I := 0 to SockNum-1 do
   begin
     SockObj := TSocketObj.Create;
-    SockObj.ConnectSer(FIOCPObj, edtIP.Text, StrToInt(edtPort.Text));
+    if SockObj.ConnectSer(FIOCPObj, edtIP.Text, StrToInt(edtPort.Text), 1) then
+    begin
+      //只连接，不做其他事情
+      SockObj.DecRefCount();
+    end
+    else
+    begin
+      SockObj.Free;
+    end;
     Application.ProcessMessages;
   end;
   lvSocket.Refresh;
@@ -156,7 +164,6 @@ var
   SockObj: THttpObj;
   Request: THttpRequest;
   I: Integer;
-  SockList: TList;
 begin
   Request := THttpRequest.Create;
   Request[THttpRequest.HEADER_ACCEPT_ENCODING] := 'gzip';
@@ -164,7 +171,7 @@ begin
   for I := 0 to StrToInt(edtRequestNum.Text)-1 do
   begin
     SockObj := THttpObj.Create;
-    if not SockObj.ConnectSer(FIOCPHttp, Request) then
+    if not SockObj.ConnectSer(FIOCPHttp, Request, 1) then
     begin
 
       SockObj.Free;
@@ -172,19 +179,9 @@ begin
     else
     begin
       SockObj.SendRequest(DS_MEMORY);
+      SockObj.DecRefCount();
     end;
   end;
-  (*
-  FIOCPHttp.LockSockList;
-
-  SockList :=  FIOCPHttp.SockList;
-  for I := 0 to SockList.Count-1 do
-  begin
-    SockObj := SockList[I];
-    SockObj.SendRequest(DS_MEMORY);
-  end;
-  FIOCPHttp.UnlockSockList;
-  *)
 end;
 
 procedure TfrmIOCPTest.btnListenClick(Sender: TObject);
@@ -196,6 +193,10 @@ begin
   if not SockLst.StartListen(FIOCPObj, StrToInt(edtSerPort.Text)) then
   begin
     SockLst.Free;
+  end
+  else
+  begin
+
   end;
 end;
 
@@ -233,7 +234,7 @@ begin
     FSendContent.Write(PChar(_s)^, Length(_s)*SizeOf(Char));
   end;
   FIOCPObj.LockSockList;
-  for SockObjPrt in FIOCPObj.GetSockList do
+  for SockObjPrt in FIOCPObj.SockObjList do
   begin
 
     _P :=SockObj.GetSendData(FSendContent.Size);
@@ -319,7 +320,7 @@ var
   ListCount: Integer;
 begin
   FIOCPObj.LockSockList;
-  SockList := FIOCPObj.GetSockList;
+  SockList := FIOCPObj.SockObjList;
   ListCount := SockList.Count;
   if SockList.Count > Item.Index then
   begin
@@ -353,7 +354,7 @@ begin
   ListCount := FIOCPObj.SockLstList.Count;
   if Item.Index < ListCount then
   begin
-    SockLst := TSocketLst(FIOCPObj.GetSockLstList[Item.Index]);
+    SockLst := TSocketLst(FIOCPObj.SockLstList[Item.Index]);
     Item.Caption := IntToStr(Item.Index);
     Item.SubItems.Add(IntToStr(SockLst.Port));
   end;
@@ -372,7 +373,7 @@ begin
   if lvSockLst.ItemIndex>=0 then
   begin
     FIOCPObj.LockSockList;
-    SockLst := FIOCPObj.GetSockLstList.Items[lvSockLst.ItemIndex];
+    SockLst := FIOCPObj.SockLstList.Items[lvSockLst.ItemIndex];
     SockLst.Close;
     FIOCPObj.UnlockSockList;
 
@@ -386,7 +387,7 @@ begin
   if lvSocket.ItemIndex>=0 then
   begin
     FIOCPObj.LockSockList;
-    SockObj := FIOCPObj.GetSockList.Items[lvSocket.ItemIndex];
+    SockObj := FIOCPObj.SockObjList.Items[lvSocket.ItemIndex];
     SockObj.Close;
     FIOCPObj.UnlockSockList;
 
@@ -402,14 +403,14 @@ begin
     leAddSockLst:
       begin
         FIOCPObj.LockSockList;
-        lvSockLst.Items.Count := FIOCPObj.GetSockLstList.Count;
+        lvSockLst.Items.Count := FIOCPObj.SockLstList.Count;
         FIOCPObj.UnlockSockList;
         lvSockLst.Refresh;
       end;
     leDelSockLst:
       begin
         FIOCPObj.LockSockList;
-        lvSockLst.Items.Count := FIOCPObj.GetSockLstList.Count;
+        lvSockLst.Items.Count := FIOCPObj.SockLstList.Count;
         FIOCPObj.UnlockSockList;
         lvSockLst.Refresh;
       end;
@@ -425,13 +426,13 @@ begin
     ieAddSocket:
       begin
         FIOCPObj.LockSockList;
-        lvSocket.Items.Count := FIOCPObj.GetSockList.Count;
+        lvSocket.Items.Count := FIOCPObj.SockObjList.Count;
         FIOCPObj.UnlockSockList;
       end;
     ieDelSocket:
       begin
         FIOCPObj.LockSockList;
-        lvSocket.Items.Count := FIOCPObj.GetSockList.Count;
+        lvSocket.Items.Count := FIOCPObj.SockObjList.Count;
         FIOCPObj.UnlockSockList;
       end;
     ieError:
@@ -487,9 +488,10 @@ begin
     ReferURL := HttpObj.HttpResponse['Location'];
     OutputDebugStr('网址重定向: ' + ReferURL);
     SockObj := THttpObj.Create;
-    if SockObj.ConnectSer(FIOCPHttp, ReferURL) then
+    if SockObj.ConnectSer(FIOCPHttp, ReferURL, 1) then
     begin
       SockObj.SendRequest();
+      SockObj.DecRefCount();
     end
     else
     begin

@@ -8,15 +8,19 @@ uses
 type
   TCMDDataRec = record
   private
-    TotalLen: LongWord;
-    TotalData: Pointer;
-    function GetDataLen: LongWord;
+    FTotalLen: LongWord;
+    FTotalData: Pointer;
+    FData: Pointer;
+    FDataLen: LongWord;
+    function GetCMD: Word;
+    procedure SetCMD(const Value: Word);
+
   public
-    CMD: Word;
-    Data: Pointer;
+    property CMD: Word read GetCMD write SetCMD;
+    property Data: Pointer read FData;
+    property DataLen: LongWord read FDataLen;
 
     function Assgin(_TotalData: Pointer; _TotalLen: LongWord): Boolean;
-    property DataLen: LongWord read GetDataLen;
   end;
   PCMDDataRec = ^TCMDDataRec;
 
@@ -29,11 +33,6 @@ type
   ///	  基于命令的通讯协议Socket类实现
   ///	</summary>
   TCmdSockObj = class(TLLSockObj)
-  protected
-    //获取Word型的命令
-    function GetRecvCMD: Word;
-    function GetRecvData: Pointer; override;
-    function GetRecvDataLen: LongWord; override;
   public
     ///	<remarks>
     ///	  SendData之前要锁定
@@ -63,7 +62,6 @@ type
     ///	</param>
     procedure FreeSendData(const SendDataRec: TCMDDataRec);reintroduce;
     class procedure GetSendDataFromOverlapped(Overlapped: PIOCPOverlapped; var SendDataRec: TCMDDataRec); inline;
-    property RecvCMD: Word read GetRecvCMD;
   end;
 
   ///	<summary>
@@ -80,7 +78,10 @@ type
   TIOCPCMDList = class(TIOCPLCXLList)
   private
     FIOCPEvent: TOnCMDEvent;
-    procedure LCXLEvent(EventType: TIocpEventEnum; SockObj: TLLSockObj;
+    /// <summary>
+    /// 基类的事件
+    /// </summary>
+    procedure BaseIOCPEvent(EventType: TIocpEventEnum; SockObj: TLLSockObj;
       Overlapped: PIOCPOverlapped);
   public
     constructor Create(AIOCPMgr: TIOCPManager); override;
@@ -93,64 +94,21 @@ implementation
 
 procedure TCmdSockObj.FreeSendData(const SendDataRec: TCMDDataRec);
 begin
-  (Self as TSocketObj).FreeSendData(SendDataRec.TotalData);
-end;
-
-function TCmdSockObj.GetRecvCMD: Word;
-var
-  _RecvDataLen: LongWord;
-begin
-  Result := 0;
-  if not IsRecvLen then
-  begin
-    _RecvDataLen := inherited GetRecvDataLen();
-    if _RecvDataLen >= SizeOf(Word) then
-    begin
-      Result := PWord(RecvBuf)^;
-    end;
-  end;
-end;
-
-function TCmdSockObj.GetRecvData: Pointer;
-var
-  _RecvDataLen: LongWord;
-begin
-  Result := nil;
-  if not IsRecvLen then
-  begin
-    _RecvDataLen := inherited GetRecvDataLen();
-    if _RecvDataLen >= SizeOf(Word) then
-    begin
-      Result := PByte(RecvBuf)+SizeOf(Word);
-    end;
-  end
-end;
-
-function TCmdSockObj.GetRecvDataLen: LongWord;
-var
-  _RecvDataLen: LongWord;
-begin
-  Result := 0;
-  if not IsRecvLen then
-  begin
-    _RecvDataLen := inherited GetRecvDataLen();
-    if _RecvDataLen >= SizeOf(Word) then
-    begin
-      Result := _RecvDataLen-SizeOf(Word);
-    end;
-  end;
+  (Self as TSocketObj).FreeSendData(SendDataRec.FTotalData);
 end;
 
 procedure TCmdSockObj.GetSendData(DataLen: LongWord;
   var SendDataRec: TCMDDataRec);
+var
+  IsSuc: Boolean;
 begin
 
-  SendDataRec.TotalLen := DataLen+SizeOf(DataLen)+SizeOf(SendDataRec.CMD);
-  SendDataRec.TotalData := (Self as TSocketObj).GetSendData(SendDataRec.TotalLen);
-  PLongWord(SendDataRec.TotalData)^ := DataLen+SizeOf(SendDataRec.CMD);
-  SendDataRec.Data := PByte(SendDataRec.TotalData)+SizeOf(DataLen)+
-    SizeOf(SendDataRec.CMD);
+  SendDataRec.FTotalLen := DataLen+SizeOf(DataLen)+SizeOf(SendDataRec.CMD);
+  SendDataRec.FTotalData := (Self as TSocketObj).GetSendData(SendDataRec.FTotalLen);
+  PLongWord(SendDataRec.FTotalData)^ := DataLen+SizeOf(SendDataRec.CMD);
 
+  IsSuc := SendDataRec.Assgin(SendDataRec.FTotalData, SendDataRec.FTotalLen);
+  Assert(IsSuc=True);
 end;
 
 class procedure TCmdSockObj.GetSendDataFromOverlapped(Overlapped: PIOCPOverlapped;
@@ -202,8 +160,7 @@ end;
 
 function TCmdSockObj.SendData(const SendDataRec: TCMDDataRec): Boolean;
 begin
-  PWord(PByte(SendDataRec.TotalData)+sizeof(SendDataRec.DataLen))^ := SendDataRec.CMD;
-  Result := (Self as TSocketObj).SendData(SendDataRec.TotalData, SendDataRec.TotalLen, True);
+  Result := (Self as TSocketObj).SendData(SendDataRec.FTotalData, SendDataRec.FTotalLen, True);
 end;
 
 { TIOCPOBJCMD }
@@ -211,7 +168,7 @@ end;
 constructor TIOCPCMDList.Create(AIOCPMgr: TIOCPManager);
 begin
   inherited;
-  inherited IOCPEvent := LCXLEvent;
+  inherited IOCPEvent := BaseIOCPEvent;
 end;
 
 (*
@@ -224,7 +181,7 @@ begin
 
 end;
 *)
-procedure TIOCPCMDList.LCXLEvent(EventType: TIocpEventEnum; SockObj: TLLSockObj;
+procedure TIOCPCMDList.BaseIOCPEvent(EventType: TIocpEventEnum; SockObj: TLLSockObj;
   Overlapped: PIOCPOverlapped);
 var
   CMDSockObj: TCMDSockObj absolute SockObj;
@@ -248,16 +205,22 @@ begin
   begin
     Exit;
   end;
-  TotalData := _TotalData;
-  TotalLen := _TotalLen;
-  Data := PByte(TotalData)+SizeOf(DataLen)+
-    SizeOf(CMD);
-  CMD := PWord(PByte(TotalData)+SizeOf(DataLen))^;
+  FTotalData := _TotalData;
+  FTotalLen := _TotalLen;
+
+  FData := PByte(FTotalData)+SizeOf(DataLen)+
+    SizeOf(Word);
+  FDataLen := FTotalLen - SizeOf(DataLen) - SizeOf(Word);
 end;
 
-function TCMDDataRec.GetDataLen: LongWord;
+function TCMDDataRec.GetCMD: Word;
 begin
-  Result := TotalLen-SizeOf(TotalLen)-SizeOf(CMD);
+  Result := PWord(PByte(FTotalData)+SizeOf(LongWord))^;
+end;
+
+procedure TCMDDataRec.SetCMD(const Value: Word);
+begin
+  PWord(PByte(FTotalData)+SizeOf(LongWord))^ := Value;
 end;
 
 { TCmdSockLst }

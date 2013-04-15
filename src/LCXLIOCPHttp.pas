@@ -126,12 +126,12 @@ type
     destructor Destroy(); override;
 
     // 连接到服务器
-    function ConnectSer(IOCPList: TIOCPHttpClientList; HttpRequest: THttpRequest)
+    function ConnectSer(IOCPList: TIOCPHttpClientList; HttpRequest: THttpRequest; IncRefNumber: Integer)
       : Boolean; reintroduce; overload;
-    function ConnectSer(IOCPList: TIOCPHttpClientList; const URL: string): Boolean;
+    function ConnectSer(IOCPList: TIOCPHttpClientList; const URL: string; IncRefNumber: Integer): Boolean;
       reintroduce; overload;
     function ConnectSer(IOCPList: TIOCPHttpClientList; const URL: string;
-      PostData: Pointer; PostDataLen: Integer): Boolean; reintroduce; overload;
+      PostData: Pointer; PostDataLen: Integer; IncRefNumber: Integer): Boolean; reintroduce; overload;
 
     // 发送请求给服务器，可用于重复发送
     function SendRequest(DataStreamType: TDATA_STREAM_TYPE = DS_MEMORY; SaveToFile: string = ''): Boolean;
@@ -400,9 +400,9 @@ end;
 { THttpObj }
 
 function THttpObj.ConnectSer(IOCPList: TIOCPHttpClientList;
-  HttpRequest: THttpRequest): Boolean;
+  HttpRequest: THttpRequest; IncRefNumber: Integer): Boolean;
 begin
-  Result := inherited ConnectSer(IOCPList, HttpRequest.Host, HttpRequest.Port);
+  Result := inherited ConnectSer(IOCPList, HttpRequest.Host, HttpRequest.Port, IncRefNumber);
   if not Result then
   begin
     Exit;
@@ -410,7 +410,7 @@ begin
   HttpRequest.Assign(HttpRequest);
 end;
 
-function THttpObj.ConnectSer(IOCPList: TIOCPHttpClientList; const URL: string): Boolean;
+function THttpObj.ConnectSer(IOCPList: TIOCPHttpClientList; const URL: string; IncRefNumber: Integer): Boolean;
 var
   HttpReq: THttpRequest;
 begin
@@ -418,12 +418,12 @@ begin
   HttpReq.URL := URL;
   // GET方法
   HttpReq.IsPostMethod := False;
-  Result := ConnectSer(IOCPList, HttpReq);
+  Result := ConnectSer(IOCPList, HttpReq, IncRefNumber);
   HttpReq.Free();
 end;
 
 function THttpObj.ConnectSer(IOCPList: TIOCPHttpClientList; const URL: string;
-  PostData: Pointer; PostDataLen: Integer): Boolean;
+  PostData: Pointer; PostDataLen: Integer; IncRefNumber: Integer): Boolean;
 var
   HttpReq: THttpRequest;
 begin
@@ -432,7 +432,7 @@ begin
   // POST方法
   HttpReq.IsPostMethod := True;
   HttpReq.SetPostData(PostData, PostDataLen);
-  Result := ConnectSer(IOCPList, HttpReq);
+  Result := ConnectSer(IOCPList, HttpReq, IncRefNumber);
   HttpReq.Free();
 end;
 

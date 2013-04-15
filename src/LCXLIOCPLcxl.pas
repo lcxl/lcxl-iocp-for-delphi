@@ -8,12 +8,20 @@ uses
 type
   TSendDataRec = record
   private
-    TotalLen: LongWord;
-    TotalData: Pointer;
+    FTotalLen: LongWord;
+    FTotalData: Pointer;
+    FData: Pointer;
+    FDataLen: LongWord;
   public
-    Data: Pointer;
-    DataLen: LongWord;
+    property Data: Pointer read FData;
+    property DataLen: LongWord read FDataLen;
+    /// <summary>
+    /// 将给定的数据转化为本记录的数据结构
+    /// </summary>
+    function Assgin(_TotalData: Pointer; _TotalLen: LongWord): Boolean;
+
   end;
+
   PSendDataRec = ^TSendDataRec;
 
   TLLSockLst = class(TSocketLst)
@@ -21,14 +29,23 @@ type
     procedure CreateSockObj(var SockObj: TSocketObj); override; // 覆盖
   end;
 
-  // LCXL协议的socket类
+  ///	<summary>
+  ///	  LCXL协议的socket类
+  ///	</summary>
   TLLSockObj = class(TSocketObj)
   private
-    FIsRecvLen: Boolean; // 是否在接受数据长度
     FBuf: Pointer;
     FCurDataLen: LongWord;
-    FNeedDataLen: LongWord;
     FBufLen: LongWord;
+    /// <summary>
+    /// 接收到的数据
+    /// </summary>
+    FRecvData: Pointer;
+    FRecvDataLen: LongWord;
+    /// <summary>
+    /// 是否接收一个完整的数据
+    /// </summary>
+    FIsRecvAll: Boolean;
   protected
     // 初始化
     function Init(): Boolean; override;
@@ -41,14 +58,14 @@ type
     // SendData之前锁定
     function SendData(const SendDataRec: TSendDataRec): Boolean; reintroduce; overload;
     function SendData(Data: Pointer; DataLen: LongWord): Boolean; reintroduce; overload;
-    //获取发送数据的指针
+    // 获取发送数据的指针
     procedure GetSendData(DataLen: LongWord; var SendDataRec: TSendDataRec); reintroduce;
-    //只有没有调用SendData的时候才可以释放，调用SendData之后将会自动释放。
-    procedure FreeSendData(const SendDataRec: TSendDataRec);reintroduce;
+    // 只有没有调用SendData的时候才可以释放，调用SendData之后将会自动释放。
+    procedure FreeSendData(const SendDataRec: TSendDataRec); reintroduce;
 
     property RecvData: Pointer read GetRecvData;
     property RecvDataLen: LongWord read GetRecvDataLen;
-    property IsRecvLen: Boolean read FIsRecvLen;
+    property IsRecvAll: Boolean read FIsRecvAll;
 
   end;
 
@@ -65,8 +82,7 @@ type
     procedure OnIOCPEvent(EventType: TIocpEventEnum; SockObj: TSocketObj;
       Overlapped: PIOCPOverlapped); override;
     // 监听事件
-    procedure OnListenEvent(EventType: TListenEventEnum;
-      SockLst: TSocketLst); override;
+    procedure OnListenEvent(EventType: TListenEventEnum; SockLst: TSocketLst); override;
   public
     // 外部接口
     property IOCPEvent: TOnLCXLEvent read FIOCPEvent write FIOCPEvent;
@@ -88,41 +104,43 @@ end;
 
 procedure TLLSockObj.FreeSendData(const SendDataRec: TSendDataRec);
 begin
-  inherited FreeSendData(SendDataRec.TotalData);
+  inherited FreeSendData(SendDataRec.FTotalData);
 end;
 
 function TLLSockObj.GetRecvData: Pointer;
 begin
-  if FIsRecvLen then
+  if not FIsRecvAll then
   begin
     Result := nil;
   end
   else
   begin
-    Result := FBuf;
+    Result := FRecvData;
   end;
 end;
 
 function TLLSockObj.GetRecvDataLen: LongWord;
 begin
-  if FIsRecvLen then
+  if not FIsRecvAll then
   begin
     Result := 0;
   end
   else
   begin
-    Result := FCurDataLen;
+    Result := FRecvDataLen;
   end;
 end;
 
-procedure TLLSockObj.GetSendData(DataLen: LongWord;
-  var SendDataRec: TSendDataRec);
+procedure TLLSockObj.GetSendData(DataLen: LongWord; var SendDataRec: TSendDataRec);
+var
+  IsSuc: Boolean;
 begin
-  SendDataRec.TotalLen := DataLen+SizeOf(DataLen);
-  SendDataRec.TotalData := inherited GetSendData(SendDataRec.TotalLen);
-  PLongWord(SendDataRec.TotalData)^ := DataLen;
-  SendDataRec.DataLen := DataLen;
-  SendDataRec.Data := PByte(SendDataRec.TotalData)+SizeOf(DataLen);
+  SendDataRec.FTotalLen := DataLen + SizeOf(DataLen);
+  SendDataRec.FTotalData := inherited GetSendData(SendDataRec.FTotalLen);
+  PLongWord(SendDataRec.FTotalData)^ := DataLen;
+
+  IsSuc := SendDataRec.Assgin(SendDataRec.FTotalData, SendDataRec.FTotalLen);
+  Assert(IsSuc=True);
 end;
 
 function TLLSockObj.Init: Boolean;
@@ -130,12 +148,11 @@ begin
   // 先调用父类的Init函数
   Result := inherited;
   // 设置为接收数据的长度
-  FIsRecvLen := True;
+  FIsRecvAll := False;
   FCurDataLen := 0;
-  FNeedDataLen := SizeOf(FNeedDataLen);
   FBufLen := 1024;
   GetMem(FBuf, FBufLen);
-  //SetKeepAlive(True);
+  // SetKeepAlive(True);
 end;
 
 function TLLSockObj.SendData(Data: Pointer; DataLen: LongWord): Boolean;
@@ -149,74 +166,56 @@ end;
 
 function TLLSockObj.SendData(const SendDataRec: TSendDataRec): Boolean;
 begin
-  Result := inherited SendData(SendDataRec.TotalData,
-    SendDataRec.TotalLen, True);
+  Result := inherited SendData(SendDataRec.FTotalData, SendDataRec.FTotalLen, True);
 end;
 
 { TIOCPOBJLCXL }
 
-procedure TIOCPLCXLList.OnIOCPEvent(EventType: TIocpEventEnum;
-  SockObj: TSocketObj; Overlapped: PIOCPOverlapped);
+procedure TIOCPLCXLList.OnIOCPEvent(EventType: TIocpEventEnum; SockObj: TSocketObj;
+  Overlapped: PIOCPOverlapped);
 var
   LLSockObj: TLLSockObj absolute SockObj;
-  DataLen: LongWord;
-  NewNeedDataLen: LongWord;
 begin
   case EventType of
     ieRecvAll:
       begin
-        DataLen := LLSockObj.FCurDataLen + Overlapped.GetRecvDataLen;
+
         // 重新申请内存
-        if DataLen > LLSockObj.FBufLen then
+        if LLSockObj.FCurDataLen + Overlapped.GetRecvDataLen > LLSockObj.FBufLen then
         begin
-          LLSockObj.FBufLen := DataLen;
+          LLSockObj.FBufLen := LLSockObj.FCurDataLen + Overlapped.GetRecvDataLen;
           ReallocMem(LLSockObj.FBuf, LLSockObj.FBufLen);
         end;
-        CopyMemory(Pbyte(LLSockObj.FBuf) + LLSockObj.FCurDataLen,
-          Overlapped.GetRecvData, Overlapped.GetRecvDataLen);
-        while LLSockObj.FNeedDataLen <= DataLen do
+        CopyMemory(PByte(LLSockObj.FBuf) + LLSockObj.FCurDataLen, Overlapped.GetRecvData,
+          Overlapped.GetRecvDataLen);
+        LLSockObj.FCurDataLen := LLSockObj.FCurDataLen + Overlapped.GetRecvDataLen;
+        while (LLSockObj.FCurDataLen >= SizeOf(LongWord)) and
+          (PLongWord(LLSockObj.FBuf)^ >= LLSockObj.FCurDataLen - SizeOf(LongWord)) do
         begin
-          LLSockObj.FCurDataLen := LLSockObj.FNeedDataLen;
-          if LLSockObj.FIsRecvLen then
-          begin
-            // 获取长度
-            if Assigned(FIOCPEvent) then
-            begin
-              FIOCPEvent(ieRecvPart, LLSockObj, Overlapped);
-            end;
-            NewNeedDataLen := PLongWord(LLSockObj.FBuf)^;
-            
-          end
-          else
-          begin
 
-            if Assigned(FIOCPEvent) then
-            begin
-              FIOCPEvent(ieRecvAll, LLSockObj, Overlapped);
-            end;
-            NewNeedDataLen := SizeOf(LLSockObj.FNeedDataLen);
+          LLSockObj.FRecvData := LLSockObj.FBuf;
+          LLSockObj.FRecvDataLen := PLongWord(LLSockObj.FBuf)^ + SizeOf(LongWord);
+          LLSockObj.FIsRecvAll := True;
+
+          if Assigned(FIOCPEvent) then
+          begin
+            FIOCPEvent(ieRecvAll, LLSockObj, Overlapped);
           end;
 
-          DataLen := DataLen - LLSockObj.FNeedDataLen;
-          MoveMemory(LLSockObj.FBuf, Pbyte(LLSockObj.FBuf) +
-            LLSockObj.FNeedDataLen, DataLen);
+          LLSockObj.FIsRecvAll := False;
+          MoveMemory(LLSockObj.FBuf, PByte(LLSockObj.FBuf) + LLSockObj.FRecvDataLen,
+            LLSockObj.FCurDataLen - LLSockObj.FRecvDataLen);
 
-          LLSockObj.FNeedDataLen := NewNeedDataLen;
-          LLSockObj.FIsRecvLen := not LLSockObj.FIsRecvLen;
+          LLSockObj.FCurDataLen := LLSockObj.FCurDataLen - LLSockObj.FRecvDataLen;
 
         end;
-        LLSockObj.FCurDataLen := DataLen;
-        (*
-        if (LLSockObj.FCurDataLen <= 4096) and
-          (LLSockObj.FBufLen >= (4096 shl 3)) then
+        if LLSockObj.FCurDataLen > 0 then
         begin
-          LLSockObj.FBufLen := 4096;
-          GetMem(P, LLSockObj.FBufLen);
-          CopyMemory(P, LLSockObj.FBuf, LLSockObj.FCurDataLen);
-          FreeMem(LLSockObj.FBuf);
-          LLSockObj.FBuf := P;
+          if Assigned(FIOCPEvent) then
+          begin
+            FIOCPEvent(ieRecvPart, LLSockObj, Overlapped);
+          end;
         end;
-        *)
       end;
   else
     if Assigned(FIOCPEvent) then
@@ -227,8 +226,7 @@ begin
 
 end;
 
-procedure TIOCPLCXLList.OnListenEvent(EventType: TListenEventEnum;
-  SockLst: TSocketLst);
+procedure TIOCPLCXLList.OnListenEvent(EventType: TListenEventEnum; SockLst: TSocketLst);
 begin
   if Assigned(FListenEvent) then
   begin
@@ -243,6 +241,23 @@ procedure TLLSockLst.CreateSockObj(var SockObj: TSocketObj);
 begin
   SockObj := TLLSockObj.Create;
 
+end;
+
+{ TSendDataRec }
+
+function TSendDataRec.Assgin(_TotalData: Pointer; _TotalLen: LongWord): Boolean;
+begin
+  Result := False;
+  if (_TotalLen < SizeOf(LongWord)) or (PLongWord(_TotalData)^ <> _TotalLen - SizeOf(LongWord)) then
+  begin
+    Exit;
+  end;
+  FTotalData := _TotalData;
+  FTotalLen := _TotalLen;
+
+  FData := Pointer(PByte(FTotalData) + SizeOf(LongWord));
+  FDataLen := FTotalLen - SizeOf(LongWord);
+  Result := True;
 end;
 
 end.

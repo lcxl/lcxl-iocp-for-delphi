@@ -20,7 +20,7 @@ object frmIOCPTest: TfrmIOCPTest
     Top = 0
     Width = 536
     Height = 332
-    ActivePage = tsHttpTest2
+    ActivePage = tsBaseTest
     Align = alClient
     TabOrder = 0
     object tsBaseTest: TTabSheet
@@ -225,6 +225,10 @@ object frmIOCPTest: TfrmIOCPTest
         object tssocklst: TTabSheet
           Caption = #30417#21548#21015#34920
           ImageIndex = 1
+          ExplicitLeft = 0
+          ExplicitTop = 0
+          ExplicitWidth = 0
+          ExplicitHeight = 0
           object lvSockLst: TListView
             AlignWithMargins = True
             Left = 3

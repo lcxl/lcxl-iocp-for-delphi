@@ -33,7 +33,6 @@ requires
   rtl;
 
 contains
-  LCXLIOCPBase in 'LCXLIOCPBase.pas',
   LCXLWinSock2 in 'LCXLWinSock2.pas',
   LCXLIOCPLcxl in 'LCXLIOCPLcxl.pas',
   LCXLMSWSock in 'LCXLMSWSock.pas',
@@ -41,6 +40,7 @@ contains
   LCXLIOCPHttp in 'LCXLIOCPHttp.pas',
   LCXLMSTcpIP in 'LCXLMSTcpIP.pas',
   LCXLWs2tcpip in 'LCXLWs2tcpip.pas',
-  LCXLWS2Def in 'LCXLWS2Def.pas';
+  LCXLWS2Def in 'LCXLWS2Def.pas',
+  LCXLIOCPBase in 'LCXLIOCPBase.pas';
 
 end.

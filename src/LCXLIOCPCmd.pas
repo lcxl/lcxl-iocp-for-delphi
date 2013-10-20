@@ -211,6 +211,7 @@ begin
   FData := PByte(FTotalData)+SizeOf(DataLen)+
     SizeOf(Word);
   FDataLen := FTotalLen - SizeOf(DataLen) - SizeOf(Word);
+  Result := True;
 end;
 
 function TCMDDataRec.GetCMD: Word;

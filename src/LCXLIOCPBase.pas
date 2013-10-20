@@ -219,6 +219,9 @@ type
   protected
     function Accept(): Boolean;
     function Init(): Boolean; override;
+    /// <summary>
+    /// 当建立了一个连接，就调用此方法来创建此连接的socket类，默认会将监听类的TAG传递给新的socket类
+    /// </summary>
     procedure CreateSockObj(var SockObj: TSocketObj); virtual; // 覆盖
   public
     constructor Create; override;
@@ -282,6 +285,7 @@ type
     /// <param name="Port">
     /// 要连接的端口号
     /// </param>
+    /// <param name="IncRefNumber">如果成功，则增加多少引用计数，引用计数需要程序员自己释放，不然会一直占用</param>
     /// <returns>
     /// 返回是否连接成功
     /// </returns>
@@ -295,6 +299,16 @@ type
     /// 获取远程端口
     /// </summary>
     function GetRemotePort(): Word; {$IFNDEF DEBUG} inline; {$ENDIF}
+
+    /// <summary>
+    /// 获取远程IP
+    /// </summary>
+    function GetLocalIP(): string; {$IFNDEF DEBUG} inline; {$ENDIF}
+    /// <summary>
+    /// 获取远程端口
+    /// </summary>
+    function GetLocalPort(): Word; {$IFNDEF DEBUG} inline; {$ENDIF}
+
     /// <summary>
     /// 获取接受的数据
     /// </summary>
@@ -1086,6 +1100,40 @@ begin
   FreeMem(Data);
 end;
 
+function TSocketObj.GetLocalIP: string;
+var
+  name: TSockAddr;
+  namelen: Integer;
+begin
+  namelen := SizeOf(name);
+  if getsockname(FSock, name, namelen) = 0 then
+  begin
+    Result := string(inet_ntoa(name.sin_addr));
+  end
+  else
+  begin
+    // OutputDebugStr(Format('socket(%d)getpeername失败:%d', [FSock, WSAGetLastError()]));
+    Result := '';
+  end;
+end;
+
+function TSocketObj.GetLocalPort: Word;
+var
+  name: TSockAddr;
+  namelen: Integer;
+begin
+  namelen := SizeOf(name);
+  if getsockname(FSock, name, namelen) = 0 then
+  begin
+    Result := ntohs(name.sin_port);
+  end
+  else
+  begin
+    // OutputDebugStr(Format('socket(%d)getpeername失败:%d', [FSock, WSAGetLastError()]));
+    Result := 0;
+  end;
+end;
+
 function TSocketObj.GetRecvBuf: Pointer;
 begin
   Result := FRecvBuf;
@@ -1325,6 +1373,7 @@ procedure TSocketLst.CreateSockObj(var SockObj: TSocketObj);
 begin
   Assert(SockObj = nil);
   SockObj := TSocketObj.Create;
+  SockObj.Tag := Self.Tag;
 end;
 
 destructor TSocketLst.Destroy;

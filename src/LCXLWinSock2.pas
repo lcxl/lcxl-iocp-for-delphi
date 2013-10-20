@@ -39,7 +39,7 @@ function ioctlsocket(s: TSocket; cmd: Longint; var arg: u_long): Integer; stdcal
 function getpeername(s: TSocket; var name: TSockAddr; var namelen: Integer)
   : Integer; stdcall;
 // Using "var addr:TSockAddr" in getsockname makes impossible to compile for IPv6
-function getsockname(s: TSocket; name: PSockAddr; var namelen: Integer): Integer; stdcall;
+function getsockname(s: TSocket; var name: TSockAddr; var namelen: Integer): Integer; stdcall;
 function getsockopt(s: TSocket; level, optname: Integer; optval: PAnsiChar;
   var optlen: Integer): Integer; stdcall;
 function htonl(hostlong: u_long): u_long; stdcall;

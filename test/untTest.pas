@@ -6,7 +6,8 @@ uses
   Windows, Messages, SysUtils, Variants, Classes, Graphics, Controls, Forms,
   Dialogs, ComCtrls, StdCtrls, ExtCtrls, DateUtils,
 
-  LCXLWinSock2, LCXLIOCPBase(*, LCXLIOCPLcxl, LCXLIOCPCmd*), LCXLIOCPHttp, Menus;
+  LCXLWinSock2, LCXLIOCPBase(*, LCXLIOCPLcxl, LCXLIOCPCmd*), LCXLIOCPHttp, Menus,
+  VCLTee.TeEngine, VCLTee.TeeProcs, VCLTee.Chart;
 
 const
   WM_SOCK_EVENT = WM_USER + 200;
@@ -28,6 +29,8 @@ type
   end;
 
   PListenRec = ^TListenRec;
+
+  TTestType = (TT_NONE, TT_KALMAN);
 
 type
   TfrmIOCPTest = class(TForm)
@@ -73,6 +76,16 @@ type
     btnLocalIP: TButton;
     lblHttpNum: TLabel;
     edtRequestNum: TEdit;
+    tsLCXLTest: TTabSheet;
+    tsCmdTest: TTabSheet;
+    tsTimeTest: TTabSheet;
+    chtTime: TChart;
+    grpTime: TGroupBox;
+    btnTimeTestStart: TButton;
+    edtTestTimeIP: TEdit;
+    lbl1: TLabel;
+    edtTestTimeIPPort: TEdit;
+    lbl2: TLabel;
     procedure FormCreate(Sender: TObject);
     procedure FormDestroy(Sender: TObject);
     procedure lvSocketData(Sender: TObject; Item: TListItem);
@@ -89,6 +102,7 @@ type
     procedure chkLoopSendClick(Sender: TObject);
     procedure rbSendFileClick(Sender: TObject);
     procedure btnLocalIPClick(Sender: TObject);
+    procedure btnTimeTestStartClick(Sender: TObject);
   private
     { Private declarations }
     FIOCPMgr: TIOCPManager;
@@ -104,6 +118,11 @@ type
     FMsgHandle: THandle;
     FCS: TRTLCriticalSection;
     FSendContent: TMemoryStream;
+    /// <summary>
+    /// 测试类型
+    /// </summary>
+    FTestType: TTestType;
+    FIsTestStarted: Boolean;
     function FormatSpeed(Speed: Double): string;
 
     // 注意，此函数不是线程安全的
@@ -243,6 +262,33 @@ begin
   end;
   FIOCPObj.UnlockSockList;
 
+end;
+
+procedure TfrmIOCPTest.btnTimeTestStartClick(Sender: TObject);
+var
+  _SockObj: TSocketObj;
+begin
+  case FTestType of
+    TT_NONE:
+    begin
+      _SockObj := TSocketObj.Create;
+      if not _SockObj.ConnectSer(FIOCPObj, edtTestTimeIP.Text, StrToInt(edtTestTimeIPPort.Text), 0) then
+      begin
+        _SockObj.Free;
+        MessageBox(Handle, '连接失败！', '', MB_ICONSTOP);
+      end;
+      btnTimeTestStart.Caption := '停止测试';
+      FTestType := TT_KALMAN;
+    end ;
+    TT_KALMAN:
+    begin
+
+      btnTimeTestStart.Caption := '开始测试';
+      FTestType := TT_NONE;
+    end;
+  else
+    MessageBox(Handle, '正在其他测试正在进行中，请先关闭其他测试', '提示', MB_ICONINFORMATION);
+  end;
 end;
 
 procedure TfrmIOCPTest.btnWaitClick(Sender: TObject);
@@ -558,13 +604,23 @@ begin
         FSendBytes := FSendBytes + SockRec.Overlapped.GetTotalSendDataLen;
         _LoopSend := FLoopSend;
         LeaveCriticalSection(FCS);
-
-        if _LoopSend then
+        case FTestType of
+          TT_NONE:
+          begin
+            if _LoopSend then
         begin
           _P := SockObj.GetSendData(Overlapped.GetTotalSendDataLen);
           CopyMemory(_P, Overlapped.GetSendData, Overlapped.GetTotalSendDataLen);
           SockObj.SendData(_P, Overlapped.GetTotalSendDataLen, true);
         end;
+          end;
+          TT_KALMAN:
+          begin
+            if True then
+
+          end ;
+        end;
+
       end;
     ieRecvPart:
     begin

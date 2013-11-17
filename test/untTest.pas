@@ -7,7 +7,7 @@ uses
   Dialogs, ComCtrls, StdCtrls, ExtCtrls, DateUtils,
 
   LCXLWinSock2, LCXLIOCPBase(*, LCXLIOCPLcxl, LCXLIOCPCmd*), LCXLIOCPHttp, Menus,
-  VCLTee.TeEngine, VCLTee.TeeProcs, VCLTee.Chart;
+  VCLTee.TeEngine, VCLTee.TeeProcs, VCLTee.Chart, VclTee.TeeGDIPlus;
 
 const
   WM_SOCK_EVENT = WM_USER + 200;
@@ -181,23 +181,26 @@ end;
 procedure TfrmIOCPTest.btnEnterClick(Sender: TObject);
 var
   SockObj: THttpObj;
-  Request: THttpRequest;
+  Request: TStreamHttpRequest;
   I: Integer;
 begin
-  Request := THttpRequest.Create;
+  Request := TStreamHttpRequest.Create;
   Request[THttpRequest.HEADER_ACCEPT_ENCODING] := 'gzip';
   Request.URL := edtURL.Text;
   for I := 0 to StrToInt(edtRequestNum.Text)-1 do
   begin
     SockObj := THttpObj.Create;
-    if not SockObj.ConnectSer(FIOCPHttp, Request, 1) then
-    begin
 
+    if not SockObj.ConnectSer(FIOCPHttp, Request.Host, Request.Port, 1) then
+    begin
+      Request.Free;
       SockObj.Free;
     end
     else
     begin
-      SockObj.SendRequest(DS_MEMORY);
+      SockObj.HttpRequest := Request;
+      SockObj.HttpResponse := TMemoryStreamHttpResponse.Create();
+      SockObj.SendRequest();
       SockObj.DecRefCount();
     end;
   end;
@@ -348,6 +351,7 @@ begin
   FPreTime := Now;
 
   FMsgHandle := Handle;
+  pgcTotal.ActivePageIndex := 0;
 end;
 
 procedure TfrmIOCPTest.FormDestroy(Sender: TObject);
@@ -509,24 +513,25 @@ end;
 
 procedure TfrmIOCPTest.OnHTTPCloseEvent(HttpObj: THttpObj);
 begin
-
+  OutputDebugStr('HTTP连接已关闭');
+  if HttpObj.HttpRequest <> nil then
+  begin
+    HttpObj.HttpRequest.Free;
+  end;
+  if HttpObj.HttpResponse <> nil then
+  begin
+    HttpObj.HttpResponse.Free;
+  end;
 end;
 
 procedure TfrmIOCPTest.OnHTTPRecvCompletedEvent(HttpObj: THttpObj);
 var
-  DataStream: TMemoryStream;
   ReferURL: string;
+  HttpReq: TStreamHttpRequest;
+  HttpResp: TMemoryStreamHttpResponse;
   SockObj: THttpObj;
 begin
-  (*
-  DataStream := TMemoryStream.Create();
-  HttpObj.HttpResponse.DataStream.Position := 0;
-  DataStream.CopyFrom(HttpObj.HttpResponse.DataStream,
-    HttpObj.HttpResponse.DataStream.Size);
-  DataStream.SaveToFile('D:\tmp.html');
-  DataStream.Free();
-  *)
-  OutputDebugStr('下载成功.');
+  OutputDebugStr(Format('下载成功,消息体大小%d', [HttpObj.HttpResponse.ContentLength]));
   // 重定向
   if (HttpObj.HttpResponse.StatusCode = 301) or (HttpObj.HttpResponse.StatusCode = 302)
   then
@@ -534,17 +539,22 @@ begin
     ReferURL := HttpObj.HttpResponse['Location'];
     OutputDebugStr('网址重定向: ' + ReferURL);
     SockObj := THttpObj.Create;
-    if SockObj.ConnectSer(FIOCPHttp, ReferURL, 1) then
+    HttpReq := TStreamHttpRequest.Create;
+    HttpReq.URL := ReferURL;
+    if SockObj.ConnectSer(FIOCPHttp, HttpReq.Host, HttpReq.Port, 1) then
     begin
+      HttpResp := TMemoryStreamHttpResponse.Create;
+      SockObj.HttpResponse := HttpResp;
       SockObj.SendRequest();
       SockObj.DecRefCount();
     end
     else
     begin
+      OutputDebugStr('网址重定向失败: ' + ReferURL);
+      HttpReq.Free;
       SockObj.Free;
     end;
   end;
-  //HttpObj.Close;
 end;
 
 procedure TfrmIOCPTest.OnHTTPRecvErrorEvent(HttpObj: THttpObj);
@@ -566,7 +576,7 @@ begin
   FRecvBytes := FRecvBytes + Longword(RecvDataLen);
   LeaveCriticalSection(FCS);
   OutputDebugStr(Format('接收消息体数据%d bytes,已接收%d bytes',
-    [RecvDataLen, HttpObj.HttpResponse.DataStream.Size]));
+    [RecvDataLen, HttpObj.HttpResponse.ContentLength]));
 end;
 
 procedure TfrmIOCPTest.OnListenEvent(EventType: TListenEventEnum; SockLst: TSocketLst);

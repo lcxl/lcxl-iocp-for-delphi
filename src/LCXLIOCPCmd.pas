@@ -153,6 +153,7 @@ begin
   Result := SendData(SendRec);
   if not Result then
   begin
+    OutputDebugStr('TCmdSockObj.SendData Failed!');
     FreeSendData(SendRec);
 
   end;

@@ -553,7 +553,7 @@ implementation
 procedure OutputDebugStr(const DebugInfo: string);
 begin
 {$IFDEF DEBUG}
-  Windows.OutputDebugString(PChar(Format('%s', [DebugInfo])));
+//  Windows.OutputDebugString(PChar(Format('%s', [DebugInfo])));
 {$ENDIF}
 end;
 

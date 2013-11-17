@@ -28,8 +28,6 @@ type
   private
     FURLRec: TURLRec;
     FIsPostMethod: Boolean;
-    FPostData: Pointer;
-    FPostDataLen: LongWord;
     function GetFragment: string;
     function GetHost: string;
     function GetPort: Integer;
@@ -45,6 +43,11 @@ type
     function GetRequestHead: AnsiString;
     function GetHeadItem(Index: string): string;
     procedure SetHeadItem(Index: string; const Value: string);
+  protected
+    procedure BeginSendContent(); virtual;abstract;
+    function GetContentLength():Int64;virtual; abstract;
+    function SendingContent(Data: Pointer; var DataLen: DWORD): Boolean; virtual;abstract;
+    procedure EndSendContent(); virtual;abstract;
   public const
     HEADER_ACCPET = 'Accept';
     HEADER_HOST = 'Host';
@@ -60,7 +63,6 @@ type
   public
     constructor Create(); virtual;
     destructor Destroy(); override;
-    procedure Assign(Source: THttpRequest); virtual;
     property URL: string read GetURL write SetURL;
     property Scheme: string read GetScheme write SetScheme;
     property Host: string read GetHost write SetHost;
@@ -68,17 +70,10 @@ type
     property Query: string read GetQuery write SetQuery;
     property Fragment: string read GetFragment write SetFragment;
     property IsPostMethod: Boolean read FIsPostMethod write FIsPostMethod;
-    property PostData: Pointer read FPostData;
-    property PostDataLen: LongWord read FPostDataLen;
     //获得请求头的字符串
     property RequestHead: AnsiString read GetRequestHead;
     property HeadItems[Index: string]: string read GetHeadItem write SetHeadItem; default;
-    //设置Post内容
-    procedure SetPostData(PostData: Pointer; PostDataLen: LongWord);
   end;
-
-  // 数据流保存类型
-  TDATA_STREAM_TYPE = (DS_MEMORY, DS_FILE);
 
   THttpResponse = class(TObject)
   private
@@ -88,56 +83,81 @@ type
     FStatusText: string;
     FData: Pointer;
     FDataLen: LongWord;
-    // 数据流保存类型
-    FDataStreamType: TDATA_STREAM_TYPE;
-    FDataStream: TStream;
-    // 是否自动删除文件，只针对DataStreamType=DS_FILE并且文件名为空的情况
-    FAutoDelFile: Boolean;
     function GetHeadItem(Index: string): string;
     function GetHeadText: string;
+  protected
+    procedure BeginRecvContent(); virtual; abstract;
+    procedure RecvingContent(Data: Pointer; DataLen: DWORD);virtual; abstract;
+    function GetContentLength():Int64;virtual; abstract;
+    procedure EndRecvContent(); virtual; abstract;
   public
-    constructor Create(DataStreamType: TDATA_STREAM_TYPE = DS_MEMORY;
-      DataFilePath: string = ''); reintroduce; virtual;
+    constructor Create(); reintroduce; virtual;
     destructor Destroy(); override;
-    procedure Reinit(DataStreamType: TDATA_STREAM_TYPE = DS_MEMORY;
-      DataFilePath: string = '');
     property HeadItems[Index: string]: string read GetHeadItem; default;
     property HeadText: string read GetHeadText;
     property HttpVersion: string read FHttpVersion;
     property StatusCode: Integer read FStatusCode;
     property StatusText: string read FStatusText;
-    property DataStream: TStream read FDataStream;
-    property DataStreamType: TDATA_STREAM_TYPE read FDataStreamType;
+    property ContentLength: Int64 read GetContentLength;
+  end;
+
+  TStreamHttpRequest = class(THttpRequest)
+  private
+    FContentStream: TStream;
+  protected
+    procedure BeginSendContent(); override;
+    function GetContentLength():Int64;override;
+    function SendingContent(Data: Pointer; var DataLen: DWORD): Boolean; override;
+    procedure EndSendContent(); override;
+  public
+    property ContentStream: TStream read FContentStream write FContentStream;
+  end;
+
+  TStreamHttpResponse = class(THttpResponse)
+  private
+    FContentStream: TStream;
+  protected
+    procedure BeginRecvContent(); override;
+    procedure RecvingContent(Data: Pointer; DataLen: DWORD);override;
+    function GetContentLength():Int64;override;
+    procedure EndRecvContent(); override;
+  public
+    property ContentStream: TStream read FContentStream write FContentStream;
+  end;
+
+  TMemoryStreamHttpResponse = class (TStreamHttpResponse)
+  private
+    FContentStream: TMemoryStream;
+  public
+    constructor Create(); override;
+    destructor Destroy(); override;
+    property ContentStream: TMemoryStream read FContentStream;
   end;
 
   THttpObj = class(TSocketObj)
   private
     FHttpRequest: THttpRequest;
     FHttpResponse: THttpResponse;
+    //是否接受完头部信息
     FRecvHeadCompleted: Boolean;
     // 消息体长度，-1表示没有此项
     FContent_Length: Int64;
     function RequesttoBinData(HttpRequest: THttpRequest; var BinData: Pointer;
       var BinDataLen: LongWord): Boolean;
     procedure SetHttpRequest(const Value: THttpRequest);
+    procedure SetHttpResponse(const Value: THttpResponse);
   protected
     function Init(): Boolean; override;
   public
     destructor Destroy(); override;
 
-    // 连接到服务器
-    function ConnectSer(IOCPList: TIOCPHttpClientList; HttpRequest: THttpRequest; IncRefNumber: Integer)
-      : Boolean; reintroduce; overload;
-    function ConnectSer(IOCPList: TIOCPHttpClientList; const URL: string; IncRefNumber: Integer): Boolean;
-      reintroduce; overload;
-    function ConnectSer(IOCPList: TIOCPHttpClientList; const URL: string;
-      PostData: Pointer; PostDataLen: Integer; IncRefNumber: Integer): Boolean; reintroduce; overload;
-
+    function ConnectSer(IOCPList: TIOCPHttpClientList; const SerAddr: string; Port: Integer;
+      IncRefNumber: Integer): Boolean; reintroduce;
     // 发送请求给服务器，可用于重复发送
-    function SendRequest(DataStreamType: TDATA_STREAM_TYPE = DS_MEMORY; SaveToFile: string = ''): Boolean;
+    function SendRequest(): Boolean;
 
     property HttpRequest: THttpRequest read FHttpRequest write SetHttpRequest;
-    property HttpResponse: THttpResponse read FHttpResponse;
+    property HttpResponse: THttpResponse read FHttpResponse write SetHttpResponse;
     property RecvHeadCompleted: Boolean read FRecvHeadCompleted;
     property Content_Length: Int64 read FContent_Length;
   end;
@@ -263,6 +283,8 @@ var
   HeadEndIndex: Integer;
   DataBeginIndex: Integer;
   I: Integer;
+  SendData: Pointer;
+  SendDataLen: DWORD;
 begin
   case EventType of
     ieAddSocket:
@@ -326,6 +348,7 @@ begin
             // 更新数据区域
             DataBeginIndex := HeadEndIndex - 1 +
               Length(HttpSock.FHttpResponse.FHeadList.LineBreak) shl 1;
+            HttpSock.FHttpResponse.BeginRecvContent;
             if Integer(HttpSock.FHttpResponse.FDataLen) - DataBeginIndex = 0 then
             begin
 
@@ -333,10 +356,13 @@ begin
             else
             begin
               // 写入到
+              HttpSock.FHttpResponse.RecvingContent((PByte(HttpSock.FHttpResponse.FData) + DataBeginIndex), Integer(HttpSock.FHttpResponse.FDataLen) - DataBeginIndex);
+              (*
               HttpSock.FHttpResponse.FDataStream.Seek(0, soEnd);
               HttpSock.FHttpResponse.FDataStream.
                 Write((PByte(HttpSock.FHttpResponse.FData) + DataBeginIndex)^,
                 Integer(HttpSock.FHttpResponse.FDataLen) - DataBeginIndex);
+              *)
             end;
             FreeMem(HttpSock.FHttpResponse.FData);
             HttpSock.FHttpResponse.FData := nil;
@@ -354,9 +380,12 @@ begin
         end
         else
         begin
+          HttpSock.FHttpResponse.RecvingContent(Overlapped.RecvData, Overlapped.RecvDataLen);
+          (*
           HttpSock.FHttpResponse.FDataStream.Seek(0, soEnd);
           HttpSock.FHttpResponse.FDataStream.Write(Overlapped.RecvData^,
             Overlapped.RecvDataLen);
+          *)
         end;
         if Assigned(FHTTPRecvingEvent) then
         begin
@@ -369,8 +398,7 @@ begin
           if HttpSock.FContent_Length >= 0 then
           begin
             // 如果下载完成，则激活事件
-            if HttpSock.FContent_Length = Integer(HttpSock.FHttpResponse.FDataStream.Size)
-            then
+            if HttpSock.FContent_Length <= Integer(HttpSock.FHttpResponse.GetContentLength()) then
             begin
               if Assigned(FHTTPRecvCompletedEvent) then
               begin
@@ -390,7 +418,24 @@ begin
     ieSendPart:
       ;
     ieSendAll:
-      ;
+      begin
+        if HttpSock.FHttpRequest.IsPostMethod then
+        begin
+          SendDataLen := $1000;
+          SendData := HttpSock.GetSendData(SendDataLen);
+          if HttpSock.FHttpRequest.SendingContent(SendData, SendDataLen) then
+          begin
+            if not HttpSock.SendData(SendData, SendDataLen, True) then
+            begin
+              HttpSock.FHttpRequest.EndSendContent;
+            end;
+          end
+          else
+          begin
+            HttpSock.FHttpRequest.EndSendContent;
+          end;
+        end;
+      end;
     ieSendFailed:
       ;
   end;
@@ -400,52 +445,14 @@ end;
 { THttpObj }
 
 function THttpObj.ConnectSer(IOCPList: TIOCPHttpClientList;
-  HttpRequest: THttpRequest; IncRefNumber: Integer): Boolean;
+  const SerAddr: string; Port, IncRefNumber: Integer): Boolean;
 begin
-  Result := inherited ConnectSer(IOCPList, HttpRequest.Host, HttpRequest.Port, IncRefNumber);
-  if not Result then
-  begin
-    Exit;
-  end;
-  HttpRequest.Assign(HttpRequest);
-end;
-
-function THttpObj.ConnectSer(IOCPList: TIOCPHttpClientList; const URL: string; IncRefNumber: Integer): Boolean;
-var
-  HttpReq: THttpRequest;
-begin
-  HttpReq := THttpRequest.Create();
-  HttpReq.URL := URL;
-  // GET方法
-  HttpReq.IsPostMethod := False;
-  Result := ConnectSer(IOCPList, HttpReq, IncRefNumber);
-  HttpReq.Free();
-end;
-
-function THttpObj.ConnectSer(IOCPList: TIOCPHttpClientList; const URL: string;
-  PostData: Pointer; PostDataLen: Integer; IncRefNumber: Integer): Boolean;
-var
-  HttpReq: THttpRequest;
-begin
-  HttpReq := THttpRequest.Create();
-  HttpReq.URL := URL;
-  // POST方法
-  HttpReq.IsPostMethod := True;
-  HttpReq.SetPostData(PostData, PostDataLen);
-  Result := ConnectSer(IOCPList, HttpReq, IncRefNumber);
-  HttpReq.Free();
+  result := inherited ConnectSer(IOCPList, SerAddr, Port, IncRefNumber);
 end;
 
 destructor THttpObj.Destroy;
 begin
-  if FHttpRequest <> nil then
-  begin
-    FHttpRequest.Free();
-  end;
-  if FHttpResponse <> nil then
-  begin
-    FHttpResponse.Free();
-  end;
+  
   inherited;
 end;
 
@@ -455,8 +462,6 @@ begin
   Result := inherited;
   if Result then
   begin
-    FHttpRequest := THttpRequest.Create();
-    FHttpResponse := THttpResponse.Create();
     FRecvHeadCompleted := False;
     FContent_Length := -1;
   end;
@@ -470,59 +475,58 @@ begin
   Result := False;
   RequestHead := HttpRequest.RequestHead;
   BinDataLen := Length(RequestHead) * sizeof(AnsiChar);
-  if HttpRequest.IsPostMethod then
-  begin
-    BinDataLen := BinDataLen + HttpRequest.PostDataLen;
-  end;
   BinData := GetSendData(BinDataLen);
   if BinData <> nil then
   begin
     CopyMemory(BinData, PAnsiChar(RequestHead), Length(RequestHead) * sizeof(AnsiChar));
-    if HttpRequest.IsPostMethod then
-    begin
-      CopyMemory(PByte(BinData) + Length(RequestHead) * sizeof(AnsiChar),
-        HttpRequest.PostData, HttpRequest.PostDataLen);
-    end;
     Result := True;
   end;
 end;
 
-function THttpObj.SendRequest(DataStreamType: TDATA_STREAM_TYPE; SaveToFile: string): Boolean;
+function THttpObj.SendRequest(): Boolean;
 var
   ReqData: Pointer;
   ReqDataLen: LongWord;
 begin
-  FHttpResponse.Reinit(DataStreamType, SaveToFile);
-  Result := RequesttoBinData(HttpRequest, ReqData, ReqDataLen) and
-    SendData(ReqData, ReqDataLen, True);
+  Result := False;
+  if FHttpRequest=nil then
+  begin
+    raise Exception.Create('FHttpRequest must be set');
+  end;
+
+  if FHttpResponse=nil then
+  begin
+    raise Exception.Create('HttpResponse must be set');
+  end;
+
+  if RequesttoBinData(HttpRequest, ReqData, ReqDataLen) then
+  begin
+    if FHttpRequest.IsPostMethod then
+    begin
+      FHttpRequest.BeginSendContent;
+
+    end;
+    if not SendData(ReqData, ReqDataLen, True) then
+    begin
+      if FHttpRequest.IsPostMethod then
+      begin
+        FHttpRequest.EndSendContent;
+      end;
+    end;
+  end;
 end;
 
 procedure THttpObj.SetHttpRequest(const Value: THttpRequest);
 begin
-  FHttpRequest.Assign(Value);
+  FHttpRequest := Value;
+end;
+
+procedure THttpObj.SetHttpResponse(const Value: THttpResponse);
+begin
+  FHttpResponse := Value;
 end;
 
 { THttpRequest }
-
-procedure THttpRequest.Assign(Source: THttpRequest);
-begin
-  if FPostData <> nil then
-  begin
-    FreeMem(FPostData);
-    FPostData := nil;
-  end;
-
-  FHeadList.Assign(Source.FHeadList);
-  FURLRec := Source.FURLRec;
-  FIsPostMethod := Source.FIsPostMethod;
-  FPostDataLen := Source.FPostDataLen;
-
-  if Source.FPostData <> nil then
-  begin
-    GetMem(FPostData, FPostDataLen);
-    CopyMemory(FPostData, Source.FPostData, FPostDataLen);
-  end;
-end;
 
 constructor THttpRequest.Create;
 begin
@@ -542,10 +546,6 @@ end;
 destructor THttpRequest.Destroy;
 begin
   FHeadList.Free();
-  if (FPostData <> nil) then
-  begin
-    FreeMem(FPostData);
-  end;
   inherited;
 end;
 
@@ -605,24 +605,6 @@ begin
   Result := EncodeURL(FURLRec, IsPostMethod);
 end;
 
-procedure THttpRequest.SetPostData(PostData: Pointer; PostDataLen: LongWord);
-begin
-  //请求原来的数据
-  if FPostData <> nil then
-  begin
-    FreeMem(FPostData);
-    FPostData := nil;
-    FPostDataLen := 0;
-  end;
-  if PostDataLen > 0 then
-  begin
-    GetMem(FPostData, PostDataLen);
-    FPostDataLen := PostDataLen;
-    CopyMemory(FPostData, PostData, PostDataLen);
-  end;
-
-end;
-
 procedure THttpRequest.SetFragment(const Value: string);
 begin
   FURLRec.Fragment := Value;
@@ -660,43 +642,16 @@ end;
 
 { THttpResponse }
 
-constructor THttpResponse.Create(DataStreamType: TDATA_STREAM_TYPE;
-  DataFilePath: string);
+constructor THttpResponse.Create();
 begin
   inherited Create();
   FHeadList := TStringList.Create();
   FHeadList.NameValueSeparator := ':'; // 设置分隔符
   FHeadList.LineBreak := #13#10;
-  Reinit(DataStreamType, DataFilePath);
 end;
 
 destructor THttpResponse.Destroy;
-var
-  FilePath: string;
 begin
-  case FDataStreamType of
-    DS_MEMORY:
-      ;
-    DS_FILE:
-      begin
-        FilePath := TFileStream(FDataStream).FileName;
-      end;
-  end;
-
-  FDataStream.Free();
-  case FDataStreamType of
-    DS_MEMORY:
-      ;
-    DS_FILE:
-      begin
-        // 如果要自动删除文件
-        if FAutoDelFile then
-        begin
-          DeleteFile(FilePath);
-        end;
-      end;
-  end;
-
   FHeadList.Free();
   if FData <> nil then
   begin
@@ -715,48 +670,6 @@ begin
   Result := FHeadList.Text;
 end;
 
-procedure THttpResponse.Reinit(DataStreamType: TDATA_STREAM_TYPE; DataFilePath: string);
-begin
-  FHeadList.Clear;
-  if FDataStream <> nil then
-  begin
-    FDataStream.Free;
-  end;
-
-  if FData <> nil then
-  begin
-    FreeMem(FData);
-    FData := nil;
-  end;
-  FDataLen := 0;
-  FHttpVersion := '';
-  FStatusCode := 0;
-  FStatusText := '';
-
-  FDataStreamType := DataStreamType;
-  case DataStreamType of
-    DS_MEMORY:
-      begin
-        FDataStream := TMemoryStream.Create;
-      end;
-    DS_FILE:
-      begin
-        if DataFilePath = '' then
-        begin
-          DataFilePath := GetEnvironmentVariable('temp') + '\html_' +
-            FormatDateTime('yyyy_m_d_hh_mm_ss_zzz.data.html', Now);
-          FAutoDelFile := True;
-        end
-        else
-        begin
-          FAutoDelFile := False;
-        end;
-        FDataStream := TFileStream.Create(DataFilePath, fmCreate or fmShareDenyWrite);
-      end;
-
-  end;
-end;
-
 { TURLRec }
 
 class operator TURLRec.Implicit(Source: TURLRec): string;
@@ -768,6 +681,75 @@ class operator TURLRec.Implicit(Source: string): TURLRec;
 begin
   Result := DecodeURL(Source);
 
+end;
+
+{ TStreamHttpResponse }
+
+procedure TStreamHttpResponse.BeginRecvContent;
+begin
+  if FContentStream = nil then
+  begin
+    raise Exception.Create('ContentStream must be set');
+  end;
+  FContentStream.Size := 0;
+end;
+
+procedure TStreamHttpResponse.EndRecvContent;
+begin
+  //
+end;
+
+function TStreamHttpResponse.GetContentLength: Int64;
+begin
+  Result := FContentStream.Size;
+end;
+
+procedure TStreamHttpResponse.RecvingContent(Data: Pointer; DataLen: DWORD);
+begin
+  FContentStream.Write(Data^, DataLen);
+end;
+
+{ TStreamHttpRequest }
+
+procedure TStreamHttpRequest.BeginSendContent;
+begin
+  if FContentStream = nil then
+  begin
+    raise Exception.Create('ContentStream must be set');
+  end;
+  FContentStream.Position := 0;
+end;
+
+procedure TStreamHttpRequest.EndSendContent;
+begin
+  //
+end;
+
+function TStreamHttpRequest.GetContentLength: Int64;
+begin
+  Result := FContentStream.Size;
+end;
+
+function TStreamHttpRequest.SendingContent(Data: Pointer;
+  var DataLen: DWORD): Boolean;
+begin
+   DataLen := FContentStream.Read(Data^, DataLen);
+   Result := DataLen > 0;
+end;
+
+{ TMemoryStreamHttpResponse }
+
+constructor TMemoryStreamHttpResponse.Create;
+begin
+  inherited;
+  FContentStream := TMemoryStream.Create();
+  inherited ContentStream := FContentStream;
+end;
+
+destructor TMemoryStreamHttpResponse.Destroy;
+begin
+  FContentStream.Free;
+  inherited;
 end;
 
 end.

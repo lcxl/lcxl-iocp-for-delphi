@@ -11,6 +11,7 @@ object frmIOCPTest: TfrmIOCPTest
   Font.Name = 'Tahoma'
   Font.Style = []
   OldCreateOrder = False
+  Position = poDesktopCenter
   OnCreate = FormCreate
   OnDestroy = FormDestroy
   PixelsPerInch = 96
@@ -20,7 +21,7 @@ object frmIOCPTest: TfrmIOCPTest
     Top = 0
     Width = 536
     Height = 332
-    ActivePage = tsTimeTest
+    ActivePage = tsHttpTest2
     Align = alClient
     TabOrder = 0
     object tsBaseTest: TTabSheet
@@ -304,10 +305,6 @@ object frmIOCPTest: TfrmIOCPTest
     object tsHttpTest2: TTabSheet
       Caption = 'HTTP'#27979#35797
       ImageIndex = 1
-      ExplicitLeft = 0
-      ExplicitTop = 0
-      ExplicitWidth = 0
-      ExplicitHeight = 0
       DesignSize = (
         528
         304)
@@ -409,6 +406,10 @@ object frmIOCPTest: TfrmIOCPTest
     object tsTimeTest: TTabSheet
       Caption = #26102#38388#31283#23450#24615#27979#35797
       ImageIndex = 5
+      ExplicitLeft = 0
+      ExplicitTop = 0
+      ExplicitWidth = 0
+      ExplicitHeight = 0
       object chtTime: TChart
         AlignWithMargins = True
         Left = 3
@@ -417,9 +418,17 @@ object frmIOCPTest: TfrmIOCPTest
         Height = 238
         Title.Text.Strings = (
           #26102#38388#26354#32447)
+        BottomAxis.LabelsFormat.TextAlignment = taCenter
+        DepthAxis.LabelsFormat.TextAlignment = taCenter
+        DepthTopAxis.LabelsFormat.TextAlignment = taCenter
+        LeftAxis.LabelsFormat.TextAlignment = taCenter
+        RightAxis.LabelsFormat.TextAlignment = taCenter
+        TopAxis.LabelsFormat.TextAlignment = taCenter
         View3D = False
+        Zoom.Pen.Mode = pmNotXor
         Align = alClient
         TabOrder = 0
+        DefaultCanvas = 'TGDIPlusCanvas'
         PrintMargins = (
           15
           19

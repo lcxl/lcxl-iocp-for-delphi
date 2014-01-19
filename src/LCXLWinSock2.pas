@@ -36,10 +36,11 @@ function closesocket(s: TSocket): Integer; stdcall;
 // Using "var addr:TSockAddr" in connect makes impossible to compile for IPv6
 function connect(s: TSocket; name: PSockAddr; namelen: Integer): Integer; stdcall;
 function ioctlsocket(s: TSocket; cmd: Longint; var arg: u_long): Integer; stdcall;
-function getpeername(s: TSocket; var name: TSockAddr; var namelen: Integer)
+// Using "var addr:TSockAddr" in getsockname makes impossible to compile for IPv6
+function getpeername(s: TSocket; name: PSockAddr; var namelen: Integer)
   : Integer; stdcall;
 // Using "var addr:TSockAddr" in getsockname makes impossible to compile for IPv6
-function getsockname(s: TSocket; var name: TSockAddr; var namelen: Integer): Integer; stdcall;
+function getsockname(s: TSocket; name: PSockAddr; var namelen: Integer): Integer; stdcall;
 function getsockopt(s: TSocket; level, optname: Integer; optval: PAnsiChar;
   var optlen: Integer): Integer; stdcall;
 function htonl(hostlong: u_long): u_long; stdcall;
@@ -140,7 +141,7 @@ function WSAHtons(s: TSocket; hostshort: u_short; lpnetshort: pu_short): u_int; 
 function WSAIoctl(s: TSocket; dwIoControlCode: DWORD; lpvInBuffer: Pointer;
   cbInBuffer: DWORD; lpvOutBuffer: Pointer; cbOutBuffer: DWORD; lpcbBytesReturned: PDWORD;
   lpOverlapped: LPWSAOVERLAPPED; lpCompletionRoutine: LPWSAOVERLAPPED_COMPLETION_ROUTINE)
-  : u_int; stdcall;
+  : Integer; stdcall;
 function WSAJoinLeaf(s: TSocket; name: PSockAddr; namelen: u_int; lpCallerData: PWSABUF;
   lpCalleeData: PWSABUF; lpSQOS: PQOS; lpGQOS: PQOS; dwFlags: DWORD): TSocket; stdcall;
 function WSANtohl(s: TSocket; netlong: u_long; lphostlong: pu_long): u_int; stdcall;
@@ -156,7 +157,7 @@ function WSARecvFrom(s: TSocket; lpBuffers: PWSABUF; dwBufferCount: DWORD;
 function WSAResetEvent(hEvent: WSAEVENT): BOOL; stdcall;
 function WSASend(s: TSocket; lpBuffers: PWSABUF; dwBufferCount: DWORD;
   lpNumberOfBytesSent: PDWORD; dwFlags: DWORD; lpOverlapped: LPWSAOVERLAPPED;
-  lpCompletionRoutine: LPWSAOVERLAPPED_COMPLETION_ROUTINE): u_int; stdcall;
+  lpCompletionRoutine: LPWSAOVERLAPPED_COMPLETION_ROUTINE): Integer; stdcall;
 function WSASendDisconnect(s: TSocket; lpOutboundDisconnectData: PWSABUF): u_int; stdcall;
 function WSASendTo(s: TSocket; lpBuffers: PWSABUF; dwBufferCount: DWORD;
   lpNumberOfBytesSent: PDWORD; dwFlags: DWORD; lpTo: PSockAddr; iTolen: u_int;

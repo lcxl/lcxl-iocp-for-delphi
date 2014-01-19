@@ -37,10 +37,13 @@ contains
   LCXLIOCPLcxl in 'LCXLIOCPLcxl.pas',
   LCXLMSWSock in 'LCXLMSWSock.pas',
   LCXLIOCPCmd in 'LCXLIOCPCmd.pas',
-  LCXLIOCPHttp in 'LCXLIOCPHttp.pas',
+  LCXLIOCPHttpCli in 'LCXLIOCPHttpCli.pas',
   LCXLMSTcpIP in 'LCXLMSTcpIP.pas',
   LCXLWs2tcpip in 'LCXLWs2tcpip.pas',
   LCXLWS2Def in 'LCXLWS2Def.pas',
-  LCXLIOCPBase in 'LCXLIOCPBase.pas';
+  LCXLIOCPBase in 'LCXLIOCPBase.pas',
+  LCXLHttpComm in 'LCXLHttpComm.pas',
+  LCXLIOCPHttpSer in 'LCXLIOCPHttpSer.pas',
+  LCXLIOCPHttp in 'LCXLIOCPHttp.pas';
 
 end.

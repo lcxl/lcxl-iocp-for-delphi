@@ -6,11 +6,7 @@ uses
   Windows, SysUtils, Classes, Types, LCXLWinSock2, LCXLMSWSock, LCXLMSTcpIP, LCXLWS2Def,
   LCXLWs2tcpip;
 
-var
-  AcceptEx: LPFN_ACCEPTEX;
-  GetAcceptExSockaddrs: LPFN_GETACCEPTEXSOCKADDRS;
-
-procedure OutputDebugStr(const DebugInfo: string); inline;
+procedure OutputDebugStr(const DebugInfo: string; AddLinkBreak: Boolean=True); inline;
 
 type
   // Iocp套接字事件类型
@@ -56,7 +52,7 @@ type
   // Socket类
   TSocketObj = class;
   // Socket列表类，要实现不同的功能，需要继承并实现其子类
-  TIOCPBaseList = class;
+  TCustomIOCPBaseList = class;
   // IOCP管理类
   TIOCPManager = class;
   // *****************************************************
@@ -124,9 +120,13 @@ type
   end;
 
   TIOCPOverlapped = _IOCPOverlapped;
-
+  /// <summary>
+  /// Socket类型
+  /// </summary>
+  TSocketType = (STObj, STLst);
   TSocketBase = class(TObject)
   protected
+    FSocketType: TSocketType;
     // 被引用了多少次，当RefCount为0时，则free此Socket对象
     // RefCount=1是只有接受
     // RefCount-1为当前正在发送的次数
@@ -139,7 +139,7 @@ type
     FSock: TSocket;
     // 与Socket关联的IOCPOBJBase结构
     // 此处IOCPOBJRec结构所指向的内存一定是在TsocketObj全部关闭时才会无效
-    FOwner: TIOCPBaseList;
+    FOwner: TCustomIOCPBaseList;
     // 端口句柄
     FIOComp: THandle;
     //
@@ -170,7 +170,7 @@ type
     /// <summary>
     /// socket管理器
     /// </summary>
-    property Owner: TIOCPBaseList read FOwner;
+    property Owner: TCustomIOCPBaseList read FOwner;
 
     /// <summary>
     /// socket句柄
@@ -201,6 +201,10 @@ type
     /// 返回当前的引用计数
     /// </returns>
     function DecRefCount(Count: Integer = 1): Integer;
+    /// <summary>
+    /// 引用计数
+    /// </summary>
+    property RefCount: Integer read FRefCount;
   end;
 
   // ********************* 结构 **************************
@@ -239,7 +243,7 @@ type
     /// <summary>
     /// 服务端开始监听
     /// </summary>
-    function StartListen(IOCPList: TIOCPBaseList; Port: Integer;
+    function StartListen(IOCPList: TCustomIOCPBaseList; Port: Integer;
       InAddr: u_long = INADDR_ANY): Boolean;
   end;
 
@@ -289,7 +293,7 @@ type
     /// <returns>
     /// 返回是否连接成功
     /// </returns>
-    function ConnectSer(IOCPList: TIOCPBaseList; const SerAddr: string; Port: Integer;
+    function ConnectSer(IOCPList: TCustomIOCPBaseList; const SerAddr: string; Port: Integer;
       IncRefNumber: Integer): Boolean;
     /// <summary>
     /// 获取远程IP
@@ -300,6 +304,7 @@ type
     /// </summary>
     function GetRemotePort(): Word; {$IFNDEF DEBUG} inline; {$ENDIF}
 
+    function GetRemoteAddr(var Address: string; var Port: Word): Boolean;{$IFNDEF DEBUG} inline; {$ENDIF}
     /// <summary>
     /// 获取远程IP
     /// </summary>
@@ -309,6 +314,7 @@ type
     /// </summary>
     function GetLocalPort(): Word; {$IFNDEF DEBUG} inline; {$ENDIF}
 
+    function GetLocalAddr(var Address: string; var Port: Word): Boolean;{$IFNDEF DEBUG} inline; {$ENDIF}
     /// <summary>
     /// 获取接受的数据
     /// </summary>
@@ -326,19 +332,19 @@ type
     /// <summary>
     /// 获取发送数据的指针
     /// </summary>
-    function GetSendData(DataLen: LongWord): Pointer;
+    function GetSendData(DataLen: LongWord): Pointer; {$IFNDEF DEBUG} inline; {$ENDIF}
 
     /// <summary>
     /// 只有没有调用SendData的时候才可以释放，调用SendData之后将会自动释放。
     /// </summary>
-    procedure FreeSendData(Data: Pointer);
+    procedure FreeSendData(Data: Pointer);{$IFNDEF DEBUG} inline; {$ENDIF}
     //
 
     /// <summary>
     /// 设置心跳包
     /// </summary>
-    procedure SetKeepAlive(IsOn: Boolean; KeepAliveTime: Integer = 50000;
-      KeepAliveInterval: Integer = 30000);
+    function SetKeepAlive(IsOn: Boolean; KeepAliveTime: Integer = 50000;
+      KeepAliveInterval: Integer = 30000): Boolean;
 
     /// <summary>
     /// 是否是服务端接受到的socket
@@ -349,7 +355,7 @@ type
   /// <summary>
   /// 存储Socket列表的类，前身为的TSocketMgr类
   /// </summary>
-  TIOCPBaseList = class(TObject)
+  TCustomIOCPBaseList = class(TObject)
   private
     // 是否可以释放此内存，由TSocketMgr触发
     FCanDestroyEvent: THandle;
@@ -472,13 +478,7 @@ type
     property SockLstList: TList read GetSockLstList;
     property SockBaseList: TList read GetSockBaseList;
 
-    /// <summary>
-    /// 获取本机IP地址列表
-    /// </summary>
-    /// <param name="Addrs">
-    /// 获取后的ip地址存入此列表中
-    /// </param>
-    class procedure GetLocalAddrs(Addrs: TStrings);
+
   end;
 
   // IOCP网络模型管理类，一个程序中只有一个实例
@@ -499,8 +499,8 @@ type
     function GetSockList: TList;
     function GetOverLappedList: TList;
   protected
-    procedure AddSockList(SockList: TIOCPBaseList);
-    procedure RemoveSockList(SockList: TIOCPBaseList);
+    procedure AddSockList(SockList: TCustomIOCPBaseList);
+    procedure RemoveSockList(SockList: TCustomIOCPBaseList);
     // 删除Overlapped列表
     procedure FreeOverLappedList;
     // 设置Overlapped为未使用
@@ -515,6 +515,14 @@ type
     constructor Create(IOCPThreadCount: Integer = 0);
     // 析构器
     destructor Destroy; override;
+    /// <summary>
+    /// 获取本机IP地址列表
+    /// </summary>
+    /// <param name="Addrs">
+    /// 获取后的ip地址存入此列表中
+    /// </param>
+    class procedure GetLocalAddrs(Addrs: TStrings);
+
     procedure LockSockList; inline;
     property SockList: TList read GetSockList;
     procedure UnlockSockList; inline;
@@ -527,15 +535,15 @@ type
 type
   // ********************* 事件 **************************
   // IOCP事件
-  TOnIOCPEvent = procedure(EventType: TIocpEventEnum; SockObj: TSocketObj;
+  TOnIOCPBaseEvent = procedure(EventType: TIocpEventEnum; SockObj: TSocketObj;
     Overlapped: PIOCPOverlapped) of object;
   // 监听事件
-  TOnListenEvent = procedure(EventType: TListenEventEnum; SockLst: TSocketLst) of object;
+  TOnListenBaseEvent = procedure(EventType: TListenEventEnum; SockLst: TSocketLst) of object;
 
-  TIOCPBase2List = class(TIOCPBaseList)
+  TIOCPBaseList = class(TCustomIOCPBaseList)
   private
-    FIOCPEvent: TOnIOCPEvent;
-    FListenEvent: TOnListenEvent;
+    FIOCPEvent: TOnIOCPBaseEvent;
+    FListenEvent: TOnListenBaseEvent;
   protected
     // IOCP事件
     procedure OnIOCPEvent(EventType: TIocpEventEnum; SockObj: TSocketObj;
@@ -544,37 +552,41 @@ type
     procedure OnListenEvent(EventType: TListenEventEnum; SockLst: TSocketLst); override;
   public
     // 外部接口
-    property IOCPEvent: TOnIOCPEvent read FIOCPEvent write FIOCPEvent;
-    property ListenEvent: TOnListenEvent read FListenEvent write FListenEvent;
+    property IOCPEvent: TOnIOCPBaseEvent read FIOCPEvent write FIOCPEvent;
+    property ListenEvent: TOnListenBaseEvent read FListenEvent write FListenEvent;
   end;
 
 implementation
+var
+  AcceptEx: LPFN_ACCEPTEX;
+  GetAcceptExSockaddrs: LPFN_GETACCEPTEXSOCKADDRS;
 
-procedure OutputDebugStr(const DebugInfo: string);
+procedure OutputDebugStr(const DebugInfo: string; AddLinkBreak: Boolean);
 begin
 {$IFDEF DEBUG}
-//  Windows.OutputDebugString(PChar(Format('%s', [DebugInfo])));
+  if AddLinkBreak then
+  begin
+    Windows.OutputDebugString(PChar(Format('%s'#10, [DebugInfo])));
+  end
+  else
+  begin
+    Windows.OutputDebugString(PChar(DebugInfo));
+  end;
 {$ENDIF}
 end;
 
 // IOCP工作线程
-function IocpWorkThread(CompletionPortID: Pointer): DWORD; stdcall;
+function IocpWorkThread(CompletionPortID: Pointer): Integer;
 var
   CompletionPort: THandle absolute CompletionPortID;
   BytesTransferred: DWORD;
   resuInt: Integer;
 
-  // CompletionKeyUIntPtr: ULONG_PTR;
-  // CompletionKey: TCOMPLETION_KEY_ENUM absolute CompletionKeyUIntPtr;
   SockBase: TSocketBase;
   SockObj: TSocketObj absolute SockBase;
   SockLst: TSocketLst absolute SockBase;
   _NewSockObj: TSocketObj;
 
-  remote: PSOCKADDR;
-  local: PSOCKADDR;
-  remoteLen: Integer;
-  localLen: Integer;
   FIocpOverlapped: PIOCPOverlapped;
   FIsSuc: Boolean;
 
@@ -611,20 +623,6 @@ begin
               Assert(FIocpOverlapped = SockObj.FAssignedOverlapped);
               OutputDebugStr(Format('socket(%d)已关闭:%d ',
                 [SockObj.FSock, WSAGetLastError]));
-              (*
-                try
-                if SockBase is TSocketObj then
-                begin
-                SockObj.Owner.OnIOCPEvent(ieCloseSocket, SockObj, FIocpOverlapped);
-                end
-                else
-                begin
-                SockLst.Owner.OnListenEvent(leCloseSockLst, SockLst);
-                end;
-                except
-
-                end;
-              *)
               // 减少引用
               SockObj.InternalDecRefCount;
               // 继续
@@ -788,9 +786,10 @@ begin
           begin
             Assert(FIocpOverlapped = SockLst.FAssignedOverlapped,
               'FIocpOverlapped != SockLst.FLstOverLap');
+            (*
             GetAcceptExSockaddrs(SockLst.FLstBuf, 0, SizeOf(SOCKADDR_IN) + 16,
               SizeOf(SOCKADDR_IN) + 16, local, localLen, remote, remoteLen);
-
+            *)
             // 更新上下文
             resuInt := setsockopt(FIocpOverlapped.AcceptSocket, SOL_SOCKET,
               SO_UPDATE_ACCEPT_CONTEXT, @SockLst.FSock, SizeOf(SockLst.FSock));
@@ -811,16 +810,7 @@ begin
             _NewSockObj.FIsSerSocket := True;
             // 添加到Socket列表中
             SockLst.Owner.AddSockBase(_NewSockObj);
-            (*
-              if SockLst.Owner.AddSockBase(_NewSockObj) then
-              begin
-
-              end
-              else
-              begin
-              _NewSockObj.Free;
-              end;
-            *)
+            
             // 投递下一个Accept端口
             if not SockLst.Accept() then
             begin
@@ -932,7 +922,7 @@ begin
   if not _IsSocketClosed1 and _IsSocketClosed2 then
   begin
     // 触发close事件
-    if Self is TSocketObj then
+    if Self.FSocketType = STObj then
     begin
       Self.FOwner.OnIOCPEvent(ieCloseSocket, Self as TSocketObj, nil);
     end
@@ -970,7 +960,7 @@ end;
 
 { TSocketObj }
 
-function TSocketObj.ConnectSer(IOCPList: TIOCPBaseList; const SerAddr: string;
+function TSocketObj.ConnectSer(IOCPList: TCustomIOCPBaseList; const SerAddr: string;
   Port: Integer; IncRefNumber: Integer): Boolean;
 var
   LastError: DWORD;
@@ -986,6 +976,7 @@ var
 begin
   Assert(FIsSerSocket = False, '');
   Result := False;
+  LastError := 0;
   ZeroMemory(@_Hints, SizeOf(_Hints));
   _Hints.ai_family := AF_UNSPEC;
   _Hints.ai_socktype := SOCK_STREAM;
@@ -1035,7 +1026,7 @@ begin
         OutputDebugStr(Format('连接%s失败：%d', [_AddrString, LastError]));
 {$ENDIF}
         closesocket(FSock);
-        WSASetLastError(LastError);
+
         FSock := INVALID_SOCKET;
       end
       else
@@ -1051,7 +1042,6 @@ begin
           OutputDebugStr(Format('添加%s到列表中失败：%d', [_AddrString, LastError]));
 {$ENDIF}
           closesocket(FSock);
-          WSASetLastError(LastError);
           FSock := INVALID_SOCKET;
           // 减少引用
           DecRefCount(IncRefNumber);
@@ -1064,11 +1054,13 @@ begin
 
   end;
   freeaddrinfo(_ResultAddInfo);
+  WSASetLastError(LastError);
 end;
 
 constructor TSocketObj.Create;
 begin
   inherited;
+  FSocketType := STObj;
   // 设置初始缓冲区为4096
   FRecvBufLen := 4096;
 end;
@@ -1100,38 +1092,40 @@ begin
   FreeMem(Data);
 end;
 
+function TSocketObj.GetLocalAddr(var Address: string; var Port: Word): Boolean;
+var
+  name: TSOCKADDR_STORAGE;
+  namelen: Integer;
+  addrbuf: array[0..NI_MAXHOST-1] of AnsiChar;
+  portbuf: array[0..NI_MAXSERV-1] of AnsiChar;
+begin
+  Address := '';
+  Port := 0;
+  Result := False;
+
+  namelen := SizeOf(name);
+  if getsockname(FSock, PSockAddr(@name), namelen) = 0 then
+  begin
+    if (getnameinfo(PSockAddr(@name), namelen, addrbuf, NI_MAXHOST, portbuf, NI_MAXSERV, NI_NUMERICHOST or NI_NUMERICSERV)=0) then
+    begin
+      Address := string(addrbuf);
+      Port := StrToIntDef(string(portbuf), 0);
+    end;
+  end;
+end;
+
 function TSocketObj.GetLocalIP: string;
 var
-  name: TSockAddr;
-  namelen: Integer;
+  tmp: Word;
 begin
-  namelen := SizeOf(name);
-  if getsockname(FSock, name, namelen) = 0 then
-  begin
-    Result := string(inet_ntoa(name.sin_addr));
-  end
-  else
-  begin
-    // OutputDebugStr(Format('socket(%d)getpeername失败:%d', [FSock, WSAGetLastError()]));
-    Result := '';
-  end;
+  GetLocalAddr(Result, tmp);
 end;
 
 function TSocketObj.GetLocalPort: Word;
 var
-  name: TSockAddr;
-  namelen: Integer;
+  tmp: string;
 begin
-  namelen := SizeOf(name);
-  if getsockname(FSock, name, namelen) = 0 then
-  begin
-    Result := ntohs(name.sin_port);
-  end
-  else
-  begin
-    // OutputDebugStr(Format('socket(%d)getpeername失败:%d', [FSock, WSAGetLastError()]));
-    Result := 0;
-  end;
+  GetLocalAddr(tmp, Result);
 end;
 
 function TSocketObj.GetRecvBuf: Pointer;
@@ -1139,38 +1133,40 @@ begin
   Result := FRecvBuf;
 end;
 
+function TSocketObj.GetRemoteAddr(var Address: string; var Port: Word): Boolean;
+var
+  name: TSOCKADDR_STORAGE;
+  namelen: Integer;
+  addrbuf: array[0..NI_MAXHOST-1] of AnsiChar;
+  portbuf: array[0..NI_MAXSERV-1] of AnsiChar;
+begin
+  Address := '';
+  Port := 0;
+  Result := False;
+
+  namelen := SizeOf(name);
+  if getpeername(FSock, PSockAddr(@name), namelen) = 0 then
+  begin
+    if (getnameinfo(PSockAddr(@name), namelen, addrbuf, NI_MAXHOST, portbuf, NI_MAXSERV, NI_NUMERICHOST or NI_NUMERICSERV)=0) then
+    begin
+      Address := string(addrbuf);
+      Port := StrToIntDef(string(portbuf), 0);
+    end;
+  end;
+end;
+
 function TSocketObj.GetRemoteIP: string;
 var
-  name: TSockAddr;
-  namelen: Integer;
+  tmp:Word;
 begin
-  namelen := SizeOf(name);
-  if getpeername(FSock, name, namelen) = 0 then
-  begin
-    Result := string(inet_ntoa(name.sin_addr));
-  end
-  else
-  begin
-    // OutputDebugStr(Format('socket(%d)getpeername失败:%d', [FSock, WSAGetLastError()]));
-    Result := '';
-  end;
+  GetRemoteAddr(result, tmp);
 end;
 
 function TSocketObj.GetRemotePort: Word;
 var
-  name: TSockAddr;
-  namelen: Integer;
+  tmp: string;
 begin
-  namelen := SizeOf(name);
-  if getpeername(FSock, name, namelen) = 0 then
-  begin
-    Result := ntohs(name.sin_port);
-  end
-  else
-  begin
-    // OutputDebugStr(Format('socket(%d)getpeername失败:%d', [FSock, WSAGetLastError()]));
-    Result := 0;
-  end;
+  GetRemoteAddr(tmp, result);
 end;
 
 function TSocketObj.GetSendData(DataLen: LongWord): Pointer;
@@ -1287,8 +1283,8 @@ begin
   end;
 end;
 
-procedure TSocketObj.SetKeepAlive(IsOn: Boolean;
-  KeepAliveTime, KeepAliveInterval: Integer);
+function TSocketObj.SetKeepAlive(IsOn: Boolean;
+  KeepAliveTime, KeepAliveInterval: Integer): Boolean;
 var
   alive_in: tcp_keepalive;
   alive_out: tcp_keepalive;
@@ -1297,8 +1293,8 @@ begin
   alive_in.KeepAliveTime := KeepAliveTime; // 开始首次KeepAlive探测前的TCP空闭时间
   alive_in.KeepAliveInterval := KeepAliveInterval; // 两次KeepAlive探测间的时间间隔
   alive_in.onoff := u_long(IsOn);
-  WSAIoctl(FSock, SIO_KEEPALIVE_VALS, @alive_in, SizeOf(alive_in), @alive_out,
-    SizeOf(alive_out), @ulBytesReturn, nil, nil);
+  Result := WSAIoctl(FSock, SIO_KEEPALIVE_VALS, @alive_in, SizeOf(alive_in), @alive_out,
+    SizeOf(alive_out), @ulBytesReturn, nil, nil) = 0;
 end;
 
 procedure TSocketObj.SetRecvBufLenBeforeInit(NewRecvBufLen: DWORD);
@@ -1365,6 +1361,7 @@ end;
 constructor TSocketLst.Create;
 begin
   inherited;
+  FSocketType := STLst;
   FSocketPoolSize := 10;
   FLstBufLen := (SizeOf(sockaddr_storage) + 16) * 2;
 end;
@@ -1406,7 +1403,7 @@ begin
   end;
 end;
 
-function TSocketLst.StartListen(IOCPList: TIOCPBaseList; Port: Integer;
+function TSocketLst.StartListen(IOCPList: TCustomIOCPBaseList; Port: Integer;
   InAddr: u_long): Boolean;
 var
   InternetAddr: TSockAddrIn;
@@ -1461,12 +1458,12 @@ end;
 
 { TIOCPBaseList }
 
-function TIOCPBaseList.AddSockBase(SockBase: TSocketBase): Boolean;
+function TCustomIOCPBaseList.AddSockBase(SockBase: TSocketBase): Boolean;
 var
   _IsLocked: Boolean;
 begin
-  Assert(SockBase.FSock <> INVALID_SOCKET);
-  Assert(SockBase.FRefCount >= 0);
+  Assert(SockBase.Socket <> INVALID_SOCKET);
+  Assert(SockBase.RefCount >= 0);
   SockBase.FOwner := Self;
   // 增加引用计数+1，此引用计数代表Recv的引用
   SockBase.InternalIncRefCount;
@@ -1498,7 +1495,7 @@ begin
     // 没有被锁住，直接添加到Socket列表中
     FSockBaseList.Add(SockBase);
     // 添加到影子List
-    if SockBase is TSocketObj then
+    if SockBase.FSocketType = STObj then
     begin
       FSockObjList.Add(SockBase);
     end
@@ -1534,7 +1531,7 @@ begin
   // Result := True;
 end;
 
-procedure TIOCPBaseList.CheckCanDestroy;
+procedure TCustomIOCPBaseList.CheckCanDestroy;
 var
   _CanDestroy: Boolean;
 begin
@@ -1549,7 +1546,7 @@ begin
   end;
 end;
 
-procedure TIOCPBaseList.CloseAllSockBase;
+procedure TCustomIOCPBaseList.CloseAllSockBase;
 var
   _SockBasePtr: Pointer;
   _SockBase: TSocketBase absolute _SockBasePtr;
@@ -1563,7 +1560,7 @@ begin
   UnlockSockList;
 end;
 
-procedure TIOCPBaseList.CloseAllSockLst;
+procedure TCustomIOCPBaseList.CloseAllSockLst;
 var
   _SockLstPtr: Pointer;
   _SockLst: TSocketBase absolute _SockLstPtr;
@@ -1577,7 +1574,7 @@ begin
   UnlockSockList;
 end;
 
-procedure TIOCPBaseList.CloseAllSockObj;
+procedure TCustomIOCPBaseList.CloseAllSockObj;
 var
   _SockObjPtr: Pointer;
   _SockObj: TSocketBase absolute _SockObjPtr;
@@ -1591,7 +1588,7 @@ begin
   UnlockSockList;
 end;
 
-constructor TIOCPBaseList.Create(AIOCPMgr: TIOCPManager);
+constructor TCustomIOCPBaseList.Create(AIOCPMgr: TIOCPManager);
 begin
   inherited Create();
   FOwner := AIOCPMgr;
@@ -1608,7 +1605,7 @@ begin
   FOwner.AddSockList(Self);
 end;
 
-destructor TIOCPBaseList.Destroy;
+destructor TCustomIOCPBaseList.Destroy;
 begin
   FCanDestroyEvent := CreateEvent(nil, True, False, nil);
   FIsFreeing := True;
@@ -1626,14 +1623,14 @@ begin
   inherited;
 end;
 
-function TIOCPBaseList.FreeSockBase(SockBase: TSocketBase): Boolean;
+function TCustomIOCPBaseList.FreeSockBase(SockBase: TSocketBase): Boolean;
 var
   _SockObj: TSocketObj absolute SockBase;
   _SockLst: TSocketLst absolute SockBase;
 
 begin
   Assert(SockBase.FRefCount = 0);
-  if SockBase is TSocketObj then
+  if SockBase.FSocketType = STObj then
   begin
     try
       OnIOCPEvent(ieDelSocket, _SockObj, nil);
@@ -1658,77 +1655,22 @@ begin
   Result := True;
 end;
 
-class procedure TIOCPBaseList.GetLocalAddrs(Addrs: TStrings);
-var
-  sHostName: AnsiString;
-  _Hints: TAddrInfoA;
-  _ResultAddInfo: PADDRINFOA;
-  _NextAddInfo: PADDRINFOA;
-  _Retval: Integer;
-  _AddrString: string;
-  _AddrStringLen: DWORD;
-begin
-  Addrs.Clear;
-  SetLength(sHostName, MAX_PATH);
-  if gethostname(PAnsiChar(sHostName), MAX_PATH) = SOCKET_ERROR then
-  begin
-    Exit;
-  end;
-
-  ZeroMemory(@_Hints, SizeOf(_Hints));
-  _Hints.ai_family := AF_UNSPEC;
-  _Hints.ai_socktype := SOCK_STREAM;
-  _Hints.ai_protocol := IPPROTO_TCP;
-
-  _Retval := getaddrinfo(PAnsiChar(sHostName), nil, @_Hints, _ResultAddInfo);
-  if _Retval <> 0 then
-  begin
-    Exit;
-  end;
-  _NextAddInfo := _ResultAddInfo;
-
-  while _NextAddInfo <> nil do
-  begin
-    _AddrStringLen := 1024;
-    // 申请缓冲区
-    SetLength(_AddrString, _AddrStringLen);
-    // 获取
-
-    if WSAAddressToString(_NextAddInfo.ai_addr, _NextAddInfo.ai_addrlen, nil,
-      PChar(_AddrString), _AddrStringLen) = 0 then
-    begin
-      // 改为真实长度,这里的_AddrStringLen包含了末尾的字符#0，所以要减去这个#0的长度
-      SetLength(_AddrString, _AddrStringLen - 1);
-      Addrs.Add(_AddrString);
-    end
-    else
-    begin
-      OutputDebugStr('WSAAddressToString Error');
-    end;
-
-    _NextAddInfo := _NextAddInfo.ai_next;
-
-  end;
-  freeaddrinfo(_ResultAddInfo);
-
-end;
-
-function TIOCPBaseList.GetSockBaseList: TList;
+function TCustomIOCPBaseList.GetSockBaseList: TList;
 begin
   Result := FSockBaseList;
 end;
 
-function TIOCPBaseList.GetSockLstList: TList;
+function TCustomIOCPBaseList.GetSockLstList: TList;
 begin
   Result := FSockLstList;
 end;
 
-function TIOCPBaseList.GetSockObjList: TList;
+function TCustomIOCPBaseList.GetSockObjList: TList;
 begin
   Result := FSockObjList;
 end;
 
-function TIOCPBaseList.InitSockBase(SockBase: TSocketBase): Boolean;
+function TCustomIOCPBaseList.InitSockBase(SockBase: TSocketBase): Boolean;
 var
   _SockObj: TSocketObj absolute SockBase;
   _SockLst: TSocketLst absolute SockBase;
@@ -1737,7 +1679,7 @@ begin
   Result := True;
   // 进入到这里，就说明已经添加到socket列表中了，所以要触发
   try
-    if SockBase is TSocketObj then
+    if SockBase.FSocketType = STObj then
     begin
       OnIOCPEvent(ieAddSocket, _SockObj, nil);
     end
@@ -1767,7 +1709,7 @@ begin
   SockBase.FIniteStatus := sisInitialized;
   Unlock;
 
-  if SockBase is TSocketObj then
+  if SockBase.FSocketType = STObj then
   begin
     // 获得Recv的Overlapped
     _SockObj.FAssignedOverlapped := FOwner.NewOverlapped(_SockObj, otRecv);
@@ -1799,7 +1741,7 @@ begin
 
 end;
 
-function TIOCPBaseList.IOCPRegSockBase(SockBase: TSocketBase): Boolean;
+function TCustomIOCPBaseList.IOCPRegSockBase(SockBase: TSocketBase): Boolean;
 begin
   // 在IOCP中注册此Socket
   SockBase.FIOComp := CreateIoCompletionPort(SockBase.FSock, FOwner.FCompletionPort,
@@ -1812,12 +1754,12 @@ begin
   end;
 end;
 
-procedure TIOCPBaseList.Lock;
+procedure TCustomIOCPBaseList.Lock;
 begin
   EnterCriticalSection(FSockBaseCS);
 end;
 
-procedure TIOCPBaseList.LockSockList;
+procedure TCustomIOCPBaseList.LockSockList;
 begin
   Lock;
   Assert(FLockRefNum >= 0);
@@ -1825,18 +1767,18 @@ begin
   Unlock;
 end;
 
-procedure TIOCPBaseList.OnIOCPEvent(EventType: TIocpEventEnum; SockObj: TSocketObj;
+procedure TCustomIOCPBaseList.OnIOCPEvent(EventType: TIocpEventEnum; SockObj: TSocketObj;
   Overlapped: PIOCPOverlapped);
 begin
 
 end;
 
-procedure TIOCPBaseList.OnListenEvent(EventType: TListenEventEnum; SockLst: TSocketLst);
+procedure TCustomIOCPBaseList.OnListenEvent(EventType: TListenEventEnum; SockLst: TSocketLst);
 begin
 
 end;
 
-procedure TIOCPBaseList.ProcessMsgEvent;
+procedure TCustomIOCPBaseList.ProcessMsgEvent;
 
 var
   Unicode: Boolean;
@@ -1862,7 +1804,7 @@ begin
   end;
 end;
 
-function TIOCPBaseList.RemoveSockBase(SockBase: TSocketBase): Boolean;
+function TCustomIOCPBaseList.RemoveSockBase(SockBase: TSocketBase): Boolean;
 var
   _IsLocked: Boolean;
 begin
@@ -1872,7 +1814,7 @@ begin
   if not _IsLocked then
   begin
     FSockBaseList.Remove(SockBase);
-    if SockBase is TSocketObj then
+    if SockBase.FSocketType = STObj then
     begin
       FSockObjList.Remove(SockBase);
     end
@@ -1893,12 +1835,12 @@ begin
   Result := True;
 end;
 
-procedure TIOCPBaseList.Unlock;
+procedure TCustomIOCPBaseList.Unlock;
 begin
   LeaveCriticalSection(FSockBaseCS);
 end;
 
-procedure TIOCPBaseList.UnlockSockList;
+procedure TCustomIOCPBaseList.UnlockSockList;
 
 var
   isAdd: Boolean;
@@ -1924,7 +1866,7 @@ begin
         FSockBaseDelList.Delete(0);
 
         FSockBaseList.Remove(_SockBase);
-        if _SockBase is TSocketObj then
+        if _SockBase.FSocketType = STObj then
         begin
           FSockObjList.Remove(_SockObj);
         end
@@ -1944,7 +1886,7 @@ begin
           _SockBase := FSockBaseAddList.Items[0];
           FSockBaseAddList.Delete(0);
           FSockBaseList.Add(_SockBase);
-          if _SockBase is TSocketObj then
+          if _SockBase.FSocketType = STObj then
           begin
             FSockObjList.Add(_SockObj);
           end
@@ -1989,7 +1931,7 @@ begin
   until _IsEnd;
 end;
 
-procedure TIOCPBaseList.WaitForDestroyEvent;
+procedure TCustomIOCPBaseList.WaitForDestroyEvent;
 const
   EVENT_NUMBER = 1;
 var
@@ -2001,7 +1943,7 @@ begin
   // 等待释放类的事件
   while not _IsEnd do
   begin
-    case MsgWaitForMultipleObjects(1, EventArray[0], False, INFINITE, QS_ALLINPUT) of
+    case MsgWaitForMultipleObjects(EVENT_NUMBER, EventArray[0], False, INFINITE, QS_ALLINPUT) of
       WAIT_OBJECT_0:
         begin
           // 可以释放了
@@ -2053,7 +1995,7 @@ end;
 
 { TIOCPManager }
 
-procedure TIOCPManager.AddSockList(SockList: TIOCPBaseList);
+procedure TIOCPManager.AddSockList(SockList: TCustomIOCPBaseList);
 begin
   LockSockList;
   FSockList.Add(SockList);
@@ -2068,8 +2010,8 @@ var
   dwBytes: DWORD;
 begin
   inherited Create();
-  IsMultiThread := True;
-  OutputDebugStr('TIOCPManager.Create');
+  //IsMultiThread := True;
+  OutputDebugStr('IOCPManager::IOCPManager');
   // 使用 2.2版的WS2_32.DLL
   if WSAStartup($0202, FwsaData) <> 0 then
   begin
@@ -2114,8 +2056,13 @@ begin
   // 创建IOCP工作线程
   for I := 0 to IOCPThreadCount - 1 do
   begin
+    //BeginThread()
+    FIocpWorkThreads[I] := BeginThread(nil, 0, @IocpWorkThread, Pointer(FCompletionPort),
+      0, ThreadID);
+    (*
     FIocpWorkThreads[I] := CreateThread(nil, 0, @IocpWorkThread, Pointer(FCompletionPort),
       0, ThreadID);
+    *)
     if FIocpWorkThreads[I] = 0 then
     begin
       raise Exception.Create('CreateThread FIocpWorkThreads Fails');
@@ -2219,6 +2166,60 @@ begin
   UnlockOverLappedList;
 end;
 
+class procedure TIOCPManager.GetLocalAddrs(Addrs: TStrings);
+var
+  sHostName: AnsiString;
+  _Hints: TAddrInfoA;
+  _ResultAddInfo: PADDRINFOA;
+  _NextAddInfo: PADDRINFOA;
+  _Retval: Integer;
+  _AddrString: string;
+  _AddrStringLen: DWORD;
+begin
+  Addrs.Clear;
+  SetLength(sHostName, MAX_PATH);
+  if gethostname(PAnsiChar(sHostName), MAX_PATH) = SOCKET_ERROR then
+  begin
+    Exit;
+  end;
+
+  ZeroMemory(@_Hints, SizeOf(_Hints));
+  _Hints.ai_family := AF_UNSPEC;
+  _Hints.ai_socktype := SOCK_STREAM;
+  _Hints.ai_protocol := IPPROTO_TCP;
+
+  _Retval := getaddrinfo(PAnsiChar(sHostName), nil, @_Hints, _ResultAddInfo);
+  if _Retval <> 0 then
+  begin
+    Exit;
+  end;
+  _NextAddInfo := _ResultAddInfo;
+
+  while _NextAddInfo <> nil do
+  begin
+    _AddrStringLen := 256;
+    // 申请缓冲区
+    SetLength(_AddrString, _AddrStringLen);
+    // 获取
+    if WSAAddressToString(_NextAddInfo.ai_addr, _NextAddInfo.ai_addrlen, nil,
+      PChar(_AddrString), _AddrStringLen) = 0 then
+    begin
+      // 改为真实长度,这里的_AddrStringLen包含了末尾的字符#0，所以要减去这个#0的长度
+      SetLength(_AddrString, _AddrStringLen - 1);
+      Addrs.Add(_AddrString);
+    end
+    else
+    begin
+      OutputDebugStr('WSAAddressToString Error');
+    end;
+
+    _NextAddInfo := _NextAddInfo.ai_next;
+
+  end;
+  freeaddrinfo(_ResultAddInfo);
+
+end;
+
 function TIOCPManager.GetOverLappedList: TList;
 begin
   Result := FOverLappedList;
@@ -2296,7 +2297,7 @@ begin
   Result := PostQueuedCompletionStatus(FCompletionPort, 0, 0, nil);
 end;
 
-procedure TIOCPManager.RemoveSockList(SockList: TIOCPBaseList);
+procedure TIOCPManager.RemoveSockList(SockList: TCustomIOCPBaseList);
 begin
   LockSockList;
   FSockList.Remove(SockList);
@@ -2315,7 +2316,7 @@ end;
 
 { TIOCPBase2List }
 
-procedure TIOCPBase2List.OnIOCPEvent(EventType: TIocpEventEnum; SockObj: TSocketObj;
+procedure TIOCPBaseList.OnIOCPEvent(EventType: TIocpEventEnum; SockObj: TSocketObj;
   Overlapped: PIOCPOverlapped);
 begin
   if Assigned(FIOCPEvent) then
@@ -2325,7 +2326,7 @@ begin
 
 end;
 
-procedure TIOCPBase2List.OnListenEvent(EventType: TListenEventEnum; SockLst: TSocketLst);
+procedure TIOCPBaseList.OnListenEvent(EventType: TListenEventEnum; SockLst: TSocketLst);
 begin
   if Assigned(FListenEvent) then
   begin

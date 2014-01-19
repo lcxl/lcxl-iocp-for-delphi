@@ -121,11 +121,14 @@
         <DCCReference Include="LCXLIOCPLcxl.pas"/>
         <DCCReference Include="LCXLMSWSock.pas"/>
         <DCCReference Include="LCXLIOCPCmd.pas"/>
-        <DCCReference Include="LCXLIOCPHttp.pas"/>
+        <DCCReference Include="LCXLIOCPHttpCli.pas"/>
         <DCCReference Include="LCXLMSTcpIP.pas"/>
         <DCCReference Include="LCXLWs2tcpip.pas"/>
         <DCCReference Include="LCXLWS2Def.pas"/>
         <DCCReference Include="LCXLIOCPBase.pas"/>
+        <DCCReference Include="LCXLHttpComm.pas"/>
+        <DCCReference Include="LCXLIOCPHttpSer.pas"/>
+        <DCCReference Include="LCXLIOCPHttp.pas"/>
         <BuildConfiguration Include="Release">
             <Key>Cfg_2</Key>
             <CfgParent>Base</CfgParent>

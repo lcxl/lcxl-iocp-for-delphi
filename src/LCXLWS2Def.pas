@@ -7,9 +7,9 @@ uses
 
 type
   u_char = AnsiChar;
-  u_short = Word;
-  u_int = Integer;
-  u_long = Longint;
+  u_short = USHORT;
+  u_int = UINT;
+  u_long = ULONG;
   pu_long = ^u_long;
   pu_short = ^u_short;
 
@@ -141,6 +141,28 @@ type
 
   TInAddr = in_addr;
 
+  //
+  // IPv6 Internet address (RFC 2553)
+  // This is an 'on-wire' format structure.
+  //
+
+  in6_addr_u = record
+    case Integer of
+    0:(
+      Byte: array [0..15] of UCHAR;
+
+    );
+    1:(
+      Word: array [0..7] of USHORT;
+    );
+  end;
+  in6_addr =record
+    u: in6_addr_u;
+  end;
+  PIN6_ADDR = ^in6_addr;
+  TIn6Addr = in6_addr;
+  PIn6Addr = ^TIn6Addr;
+
   PSockAddrIn = ^TSockAddrIn;
 {$EXTERNALSYM sockaddr_in}
 
@@ -157,6 +179,45 @@ type
   end;
 
   TSockAddrIn = sockaddr_in;
+
+  //LCXL ADD
+
+  SCOPE_ID = record
+    case Integer of
+    0:(
+      Zone_Level: ULONG;
+    );
+    1:(
+      Value: ULONG;
+    );
+  end;
+  PSCOPE_ID = ^SCOPE_ID;
+
+  //
+// NB: The LH version of sockaddr_in6 has the struct tag sockaddr_in6 rather
+// than sockaddr_in6_lh.  This is to make sure that standard sockets apps
+// that conform to RFC 2553 (Basic Socket Interface Extensions for IPv6).
+//
+  sockaddr_in6 = record
+    sin6_family: ADDRESS_FAMILY ; // AF_INET6.
+    sin6_port: USHORT ;           // Transport level port number.
+    sin6_flowinfo: ULONG  ;       // IPv6 flow information.
+    sin6_addr: IN6_ADDR ;         // IPv6 address.
+    // Set of interfaces for a scope.
+    case Integer of
+    0:(
+    sin6_scope_id: ULONG;
+    );
+    1:(
+    sin6_scope_struct: SCOPE_ID;
+    )
+  end;
+  SOCKADDR_IN6_LH = sockaddr_in6;
+  PSOCKADDR_IN6_LH = ^SOCKADDR_IN6_LH;
+  TSockAddrIn6 = SOCKADDR_IN6_LH;
+  PSockAddrIn6 = ^TSockAddrIn6;
+
+  //!LCXL ADD
 
 type
   PHostEnt = ^THostEnt;
@@ -1260,6 +1321,20 @@ type
   ADDRINFOA = addrinfo;
 
   TAddrInfoA = ADDRINFOA;
+const
+  //
+// Flags for getnameinfo()
+//
+
+NI_NOFQDN       = $01;  (* Only return nodename portion for local hosts *)
+NI_NUMERICHOST  = $02;  (* Return numeric form of the host's address *)
+NI_NAMEREQD     = $04;  (* Error if the host's name not in DNS *)
+NI_NUMERICSERV  = $08;  (* Return numeric form of the service (port #) *)
+NI_DGRAM        = $10;  (* Service is a datagram service *)
+
+NI_MAXHOST      =1025;  (* Max size of a fully-qualified domain name *)
+NI_MAXSERV      =32;    (* Max size of a service name *)
+
 const
   ws2_32_dll = 'ws2_32.dll';
 

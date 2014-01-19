@@ -11,6 +11,7 @@ type
     FTotalLen: LongWord;
     FTotalData: Pointer;
     FData: Pointer;
+
     FDataLen: LongWord;
     function GetCMD: Word;
     procedure SetCMD(const Value: Word);
@@ -18,6 +19,7 @@ type
   public
     property CMD: Word read GetCMD write SetCMD;
     property Data: Pointer read FData;
+    //这边的DataLen不包括CMD的长度
     property DataLen: LongWord read FDataLen;
 
     function Assgin(_TotalData: Pointer; _TotalLen: LongWord): Boolean;
@@ -67,26 +69,31 @@ type
   ///	<summary>
   ///	  IOCP命令事件
   ///	</summary>
-  TOnCMDEvent = procedure(EventType: TIocpEventEnum; SockObj: TCmdSockObj;
+  TOnIOCPCMDEvent = procedure(EventType: TIocpEventEnum; SockObj: TCmdSockObj;
     Overlapped: PIOCPOverlapped) of object;
 
+  TOnListenCMDEvent = procedure(EventType: TListenEventEnum; SockLst: TCmdSockLst) of object;
 
 
   ///	<summary>
   ///	  基于命令的通讯协议Socket类列表的实现
   ///	</summary>
-  TIOCPCMDList = class(TIOCPLCXLList)
+  TIOCPCMDList = class(TCustomIOCPLCXLList)
   private
-    FIOCPEvent: TOnCMDEvent;
+    FIOCPEvent: TOnIOCPCMDEvent;
+    FListenEvent: TOnListenCMDEvent;
+  protected
     /// <summary>
     /// 基类的事件
     /// </summary>
-    procedure BaseIOCPEvent(EventType: TIocpEventEnum; SockObj: TLLSockObj;
-      Overlapped: PIOCPOverlapped);
+    procedure OnIOCPEvent(EventType: TIocpEventEnum; SockObj: TLLSockObj;
+      Overlapped: PIOCPOverlapped); override;
+    // 监听事件
+    procedure OnListenEvent(EventType: TListenEventEnum; SockLst: TSocketLst); override;
   public
-    constructor Create(AIOCPMgr: TIOCPManager); override;
     // 外部接口
-    property IOCPEvent: TOnCMDEvent read FIOCPEvent write FIOCPEvent;
+    property IOCPEvent: TOnIOCPCMDEvent read FIOCPEvent write FIOCPEvent;
+    property ListenEvent: TOnListenCMDEvent read FListenEvent write FListenEvent;
   end;
 implementation
 
@@ -141,6 +148,11 @@ begin
   end;
   SendRec.CMD := CMD;
   Result := SendData(SendRec);
+  if not Result then
+  begin
+    OutputDebugStr('TCmdSockObj.SendData Failed!');
+    FreeSendData(SendRec);
+  end;
 end;
 
 function TCmdSockObj.SendData(CMD: Word; Data: Pointer; DataLen: LongWord): Boolean;
@@ -164,13 +176,8 @@ begin
   Result := (Self as TSocketObj).SendData(SendDataRec.FTotalData, SendDataRec.FTotalLen, True);
 end;
 
-{ TIOCPOBJCMD }
+{ TIOCPCMDList }
 
-constructor TIOCPCMDList.Create(AIOCPMgr: TIOCPManager);
-begin
-  inherited;
-  inherited IOCPEvent := BaseIOCPEvent;
-end;
 
 (*
 procedure TIOCPCMDList.CreateSockObj(var SockObj: TSocketObj);
@@ -182,7 +189,7 @@ begin
 
 end;
 *)
-procedure TIOCPCMDList.BaseIOCPEvent(EventType: TIocpEventEnum; SockObj: TLLSockObj;
+procedure TIOCPCMDList.OnIOCPEvent(EventType: TIocpEventEnum; SockObj: TLLSockObj;
   Overlapped: PIOCPOverlapped);
 var
   CMDSockObj: TCMDSockObj absolute SockObj;
@@ -191,6 +198,17 @@ begin
     begin
       FIOCPEvent(EventType, CMDSockObj, Overlapped);
     end;
+end;
+
+procedure TIOCPCMDList.OnListenEvent(EventType: TListenEventEnum;
+  SockLst: TSocketLst);
+var
+  LLSockLst: TCMDSockLst absolute SockLst;
+begin
+  if Assigned(FListenEvent) then
+  begin
+    FListenEvent(EventType, LLSockLst);
+  end;
 end;
 
 { TCMDDataRec }
@@ -232,5 +250,7 @@ begin
   SockObj := TCMDSockObj.Create;
 
 end;
+
+
 
 end.

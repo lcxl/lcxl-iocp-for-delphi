@@ -69,24 +69,35 @@ type
 
   end;
 
+  // LCXL协议实现类
+  TCustomIOCPLCXLList = class(TCustomIOCPBaseList)
+  private
+    procedure OnIOCPEvent(EventType: TIocpEventEnum; SockObj: TSocketObj;
+      Overlapped: PIOCPOverlapped);overload; override;
+  protected
+    procedure OnIOCPEvent(EventType: TIocpEventEnum; SockObj: TLLSockObj;
+      Overlapped: PIOCPOverlapped);overload; virtual;
+  end;
+
   // IOCP事件
-  TOnLCXLEvent = procedure(EventType: TIocpEventEnum; SockObj: TLLSockObj;
+  TOnIOCPLCXLEvent = procedure(EventType: TIocpEventEnum; SockObj: TLLSockObj;
     Overlapped: PIOCPOverlapped) of object;
+  TOnListenLCXLEvent = procedure(EventType: TListenEventEnum; SockLst: TLLSockLst) of object;
 
   // LCXL协议实现类
-  TIOCPLCXLList = class(TIOCPBaseList)
+  TIOCPLCXLList = class(TCustomIOCPLCXLList)
   private
-    FIOCPEvent: TOnLCXLEvent;
-    FListenEvent: TOnListenEvent;
+    FIOCPEvent: TOnIOCPLCXLEvent;
+    FListenEvent: TOnListenLCXLEvent;
   protected
-    procedure OnIOCPEvent(EventType: TIocpEventEnum; SockObj: TSocketObj;
+    procedure OnIOCPEvent(EventType: TIocpEventEnum; SockObj: TLLSockObj;
       Overlapped: PIOCPOverlapped); override;
     // 监听事件
     procedure OnListenEvent(EventType: TListenEventEnum; SockLst: TSocketLst); override;
   public
     // 外部接口
-    property IOCPEvent: TOnLCXLEvent read FIOCPEvent write FIOCPEvent;
-    property ListenEvent: TOnListenEvent read FListenEvent write FListenEvent;
+    property IOCPEvent: TOnIOCPLCXLEvent read FIOCPEvent write FIOCPEvent;
+    property ListenEvent: TOnListenLCXLEvent read FListenEvent write FListenEvent;
   end;
 
 implementation
@@ -162,6 +173,10 @@ begin
   GetSendData(DataLen, SendRec);
   CopyMemory(SendRec.Data, Data, DataLen);
   Result := SendData(SendRec);
+  if not Result then
+  begin
+    FreeSendData(SendRec);
+  end;
 end;
 
 function TLLSockObj.SendData(const SendDataRec: TSendDataRec): Boolean;
@@ -171,66 +186,24 @@ end;
 
 { TIOCPOBJLCXL }
 
-procedure TIOCPLCXLList.OnIOCPEvent(EventType: TIocpEventEnum; SockObj: TSocketObj;
+procedure TIOCPLCXLList.OnIOCPEvent(EventType: TIocpEventEnum; SockObj: TLLSockObj;
   Overlapped: PIOCPOverlapped);
 var
   LLSockObj: TLLSockObj absolute SockObj;
 begin
-  case EventType of
-    ieRecvAll:
-      begin
-
-        // 重新申请内存
-        if LLSockObj.FCurDataLen + Overlapped.GetRecvDataLen > LLSockObj.FBufLen then
-        begin
-          LLSockObj.FBufLen := LLSockObj.FCurDataLen + Overlapped.GetRecvDataLen;
-          ReallocMem(LLSockObj.FBuf, LLSockObj.FBufLen);
-        end;
-        CopyMemory(PByte(LLSockObj.FBuf) + LLSockObj.FCurDataLen, Overlapped.GetRecvData,
-          Overlapped.GetRecvDataLen);
-        LLSockObj.FCurDataLen := LLSockObj.FCurDataLen + Overlapped.GetRecvDataLen;
-        while (LLSockObj.FCurDataLen >= SizeOf(LongWord)) and
-          (PLongWord(LLSockObj.FBuf)^ >= LLSockObj.FCurDataLen - SizeOf(LongWord)) do
-        begin
-
-          LLSockObj.FRecvData := LLSockObj.FBuf;
-          LLSockObj.FRecvDataLen := PLongWord(LLSockObj.FBuf)^ + SizeOf(LongWord);
-          LLSockObj.FIsRecvAll := True;
-
-          if Assigned(FIOCPEvent) then
-          begin
-            FIOCPEvent(ieRecvAll, LLSockObj, Overlapped);
-          end;
-
-          LLSockObj.FIsRecvAll := False;
-          MoveMemory(LLSockObj.FBuf, PByte(LLSockObj.FBuf) + LLSockObj.FRecvDataLen,
-            LLSockObj.FCurDataLen - LLSockObj.FRecvDataLen);
-
-          LLSockObj.FCurDataLen := LLSockObj.FCurDataLen - LLSockObj.FRecvDataLen;
-
-        end;
-        if LLSockObj.FCurDataLen > 0 then
-        begin
-          if Assigned(FIOCPEvent) then
-          begin
-            FIOCPEvent(ieRecvPart, LLSockObj, Overlapped);
-          end;
-        end;
-      end;
-  else
-    if Assigned(FIOCPEvent) then
-    begin
-      FIOCPEvent(EventType, LLSockObj, Overlapped);
-    end;
+  if Assigned(FIOCPEvent) then
+  begin
+    FIOCPEvent(ieRecvAll, SockObj, Overlapped);
   end;
-
 end;
 
 procedure TIOCPLCXLList.OnListenEvent(EventType: TListenEventEnum; SockLst: TSocketLst);
+var
+  LLSockLst: TLLSockLst absolute SockLst;
 begin
   if Assigned(FListenEvent) then
   begin
-    FListenEvent(EventType, SockLst);
+    FListenEvent(EventType, LLSockLst);
   end;
 
 end;
@@ -258,6 +231,58 @@ begin
   FData := Pointer(PByte(FTotalData) + SizeOf(LongWord));
   FDataLen := FTotalLen - SizeOf(LongWord);
   Result := True;
+end;
+
+{ TCustomIOCPLCXLList }
+
+procedure TCustomIOCPLCXLList.OnIOCPEvent(EventType: TIocpEventEnum;
+  SockObj: TSocketObj; Overlapped: PIOCPOverlapped);
+var
+  LLSockObj: TLLSockObj absolute SockObj;
+begin
+  case EventType of
+    ieRecvAll:
+      begin
+
+        // 重新申请内存
+        if LLSockObj.FCurDataLen + Overlapped.GetRecvDataLen > LLSockObj.FBufLen then
+        begin
+          LLSockObj.FBufLen := LLSockObj.FCurDataLen + Overlapped.GetRecvDataLen;
+          ReallocMem(LLSockObj.FBuf, LLSockObj.FBufLen);
+        end;
+        CopyMemory(PByte(LLSockObj.FBuf) + LLSockObj.FCurDataLen, Overlapped.GetRecvData,
+          Overlapped.GetRecvDataLen);
+        LLSockObj.FCurDataLen := LLSockObj.FCurDataLen + Overlapped.GetRecvDataLen;
+        while (LLSockObj.FCurDataLen >= SizeOf(LongWord)) and
+          (LLSockObj.FCurDataLen - SizeOf(LongWord) >= PLongWord(LLSockObj.FBuf)^) do
+        begin
+
+          LLSockObj.FRecvData := LLSockObj.FBuf;
+          LLSockObj.FRecvDataLen := PLongWord(LLSockObj.FBuf)^ + SizeOf(LongWord);
+          LLSockObj.FIsRecvAll := True;
+          OnIOCPEvent(ieRecvAll, LLSockObj, Overlapped);
+
+          LLSockObj.FIsRecvAll := False;
+          MoveMemory(LLSockObj.FBuf, PByte(LLSockObj.FBuf) + LLSockObj.FRecvDataLen,
+            LLSockObj.FCurDataLen - LLSockObj.FRecvDataLen);
+
+          LLSockObj.FCurDataLen := LLSockObj.FCurDataLen - LLSockObj.FRecvDataLen;
+
+        end;
+        if LLSockObj.FCurDataLen > 0 then
+        begin
+          OnIOCPEvent(ieRecvPart, LLSockObj, Overlapped);
+        end;
+      end;
+  else
+    OnIOCPEvent(EventType, LLSockObj, Overlapped);
+  end;
+end;
+
+procedure TCustomIOCPLCXLList.OnIOCPEvent(EventType: TIocpEventEnum;
+  SockObj: TLLSockObj; Overlapped: PIOCPOverlapped);
+begin
+  //nothing
 end;
 
 end.

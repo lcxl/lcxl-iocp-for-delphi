@@ -10,38 +10,55 @@ procedure OutputDebugStr(const DebugInfo: string; AddLinkBreak: Boolean=True); i
 
 type
   // Iocp套接字事件类型
-  /// <summary>
-  /// Iocp套接字事件类型
-  /// </summary>
-  TIocpEventEnum = (ieAddSocket,
+  ///	<summary>
+  ///	  Iocp套接字事件类型
+  ///	</summary>
+  TIocpEventEnum = (
+    ieAddSocket,
 
-    /// <summary>
-    /// socket从IOCP管理器移除事件
-    /// </summary>
+    ///	<summary>
+    ///	  socket从IOCP管理器移除事件
+    ///	</summary>
     ieDelSocket,
 
-    /// <summary>
-    /// socket被系统关闭事件，当触发这事件时，用户必须释放此socket的引用，以便iocp管理器清除此socket，当用户引用释放之后，会触发ieD
-    /// elSocket事件
-    /// </summary>
+    ///	<summary>
+    ///	  socket被系统关闭事件，当触发这事件时，用户必须释放此socket的引用，以便iocp管理器清除此socket，当用户引用释放之后，会触发ieD
+    ///	  elSocket事件
+    ///	</summary>
     ieCloseSocket,
 
     ieError,
 
-    /// <summary>
-    /// ieRecvPart 在本单元中没有实现，扩展用
-    /// </summary>
+    ///	<summary>
+    ///	  ieRecvPart 在本单元中没有实现，扩展用
+    ///	</summary>
     ieRecvPart,
 
+    ///	<summary>
+    ///	  当接受到数据时会触发此事件类型
+    ///	</summary>
     ieRecvAll,
 
+    ///	<summary>
+    ///	  接受失败
+    ///	</summary>
     ieRecvFailed,
 
+    ///	<summary>
+    ///	  只发送了一部分数据
+    ///	</summary>
     ieSendPart,
 
+    ///	<summary>
+    ///	  已经发送了全部数据
+    ///	</summary>
     ieSendAll,
 
-    ieSendFailed);
+    ///	<summary>
+    ///	  <font style="BACKGROUND-COLOR: #ffffe0">发送失败</font>
+    ///	</summary>
+    ieSendFailed
+  );
   TListenEventEnum = (leAddSockLst, leDelSockLst, leCloseSockLst, leListenFailed);
   // ******************* 前置声明 ************************
   TSocketBase = class;

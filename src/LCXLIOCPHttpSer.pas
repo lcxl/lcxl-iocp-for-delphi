@@ -1,5 +1,9 @@
 unit LCXLIOCPHttpSer;
-
+(* **************************************************************************** *)
+(* 作者: LCXL *)
+(* E-mail: lcx87654321@163.com *)
+(* 说明: IOCP Http服务端定义类 *)
+(* **************************************************************************** *)
 interface
 uses
   Windows, Sysutils, Classes, LCXLIOCPBase, LCXLHttpComm, LCXLIOCPHttp;

@@ -265,7 +265,7 @@ type
     /// 服务端开始监听
     /// </summary>
     function StartListen(IOCPList: TCustomIOCPBaseList; Port: Integer;
-      InAddr: u_long = INADDR_ANY): Boolean;
+      Family: Integer = AF_UNSPEC): Boolean;
   end;
 
   /// <summary>
@@ -472,6 +472,9 @@ type
     /// 锁定列表，注意的锁定后不能对列表进行增加，删除操作，一切都由SocketMgr类维护
     /// </summary>
     procedure LockSockList;
+    /// <summary>
+    /// 解锁列表
+    /// </summary>
     procedure UnlockSockList;
     /// <summary>
     /// 处理消息函数，在有窗口的程序下使用
@@ -1425,34 +1428,52 @@ begin
 end;
 
 function TSocketLst.StartListen(IOCPList: TCustomIOCPBaseList; Port: Integer;
-  InAddr: u_long): Boolean;
+  Family: Integer): Boolean;
 var
-  InternetAddr: TSockAddrIn;
-  // ListenSock: Integer;
   ErrorCode: Integer;
+  _Hints: TAddrInfoA;
+  _ResultAddInfo: PADDRINFOA;
+  _Retval: Integer;
 begin
   Result := False;
   FPort := Port;
-  FSock := WSASocket(AF_INET, SOCK_STREAM, IPPROTO_TCP, nil, 0, WSA_FLAG_OVERLAPPED);
+
+
+  _Hints.ai_family := AF_UNSPEC;
+  _Hints.ai_socktype := SOCK_STREAM;
+  _Hints.ai_protocol := IPPROTO_TCP;
+  _Hints.ai_flags := AI_PASSIVE or AI_ADDRCONFIG;
+  _Retval := getaddrinfo(nil,
+    PAnsiChar(AnsiString(IntToStr(Port))), @_Hints, _ResultAddInfo);
+  if _Retval <> 0 then
+  begin
+    ErrorCode := WSAGetLastError;
+    OutputDebugStr('getaddrinfo 函数失败：' + IntToStr(ErrorCode));
+    Exit;
+  end;
+  FSock := WSASocket(_ResultAddInfo.ai_family, _ResultAddInfo.ai_socktype, _ResultAddInfo.ai_protocol, nil, 0, WSA_FLAG_OVERLAPPED);
   if (FSock = INVALID_SOCKET) then
   begin
     ErrorCode := WSAGetLastError;
     OutputDebugStr('WSASocket 函数失败：' + IntToStr(ErrorCode));
+    freeaddrinfo(_ResultAddInfo);
+
     Exit;
   end;
-  InternetAddr.sin_family := AF_INET;
-  InternetAddr.sin_addr.s_addr := htonl(InAddr);
-  InternetAddr.sin_port := htons(Port);
+
   // 绑定端口号
-  if (bind(FSock, @InternetAddr, SizeOf(InternetAddr)) = SOCKET_ERROR) then
+  if (bind(FSock, _ResultAddInfo.ai_addr, _ResultAddInfo.ai_addrlen) = SOCKET_ERROR) then
   begin
     ErrorCode := WSAGetLastError;
     OutputDebugStr('bind 函数失败：' + IntToStr(ErrorCode));
     closesocket(FSock);
+    freeaddrinfo(_ResultAddInfo);
+
     WSASetLastError(ErrorCode);
     FSock := INVALID_SOCKET;
     Exit;
   end;
+  freeaddrinfo(_ResultAddInfo);
   // 开始监听
   if listen(FSock, SOMAXCONN) = SOCKET_ERROR then
   begin

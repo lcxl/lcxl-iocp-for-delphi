@@ -53,20 +53,21 @@ var
   Request: TStreamHttpRequest;
   I: Integer;
 begin
-  Request := TStreamHttpRequest.Create;
-  Request[REQUEST_ACCEPT_ENCODING] := 'gzip';
-  Request.URL := AnsiString(edtURL.Text);
+
   for I := 0 to StrToInt(edtRequestNum.Text)-1 do
   begin
     SockObj := THttpCliObj.Create;
 
     if not SockObj.ConnectSer(FIOCPHttp, string(Request.Host), Request.Port, 1) then
     begin
-      Request.Free;
       SockObj.Free;
     end
     else
     begin
+      Request := TStreamHttpRequest.Create;
+      Request[REQUEST_ACCEPT_ENCODING] := 'gzip';
+      Request.URL := AnsiString(edtURL.Text);
+
       SockObj.HttpRequest := Request;
       SockObj.HttpResponse := TMemoryStreamHttpResponse.Create();
       SockObj.SendRequest();
